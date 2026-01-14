@@ -59,31 +59,17 @@ class OptimizerSettingsWidget(QGroupBox):
         )
 
 
-        # Single Span mode
-        self.single_span_checkbox = QCheckBox("Single Span")
-        self.single_span_checkbox.setChecked(False)  # Default to disabled
-        self.single_span_checkbox.setToolTip(
-            "When enabled: Sets B-spline degree to (control points - 1) to produce a single span B-spline.\n"
-            "This ensures compatibility with Fusion 360, which cannot import multi-span B-splines.\n"
-            "The config degree setting is ignored when this mode is active."
-        )
 
         # B-spline settings (new layout for knots)
         self.upper_cp_label = QLabel("Upper CPs: -")
         self.upper_insert_btn = QPushButton("+")
-        self.upper_remove_btn = QPushButton("−")
-        self.upper_insert_btn.setFixedWidth(30)
-        self.upper_remove_btn.setFixedWidth(30)
-        self.upper_insert_btn.setToolTip("Insert a knot at the location of maximum deviation on the upper surface.")
-        self.upper_remove_btn.setToolTip("Remove a control point from the upper surface.")
-        
+        self.upper_insert_btn.setFixedWidth(100)
+        self.upper_insert_btn.setToolTip("Insert a knot on the upper surface.")
+
         self.lower_cp_label = QLabel("Lower CPs: -")
         self.lower_insert_btn = QPushButton("+")
-        self.lower_remove_btn = QPushButton("−")
-        self.lower_insert_btn.setFixedWidth(30)
-        self.lower_remove_btn.setFixedWidth(30)
-        self.lower_insert_btn.setToolTip("Insert a knot at the location of maximum deviation on the lower surface.")
-        self.lower_remove_btn.setToolTip("Remove a control point from the lower surface.")
+        self.lower_insert_btn.setFixedWidth(100)
+        self.lower_insert_btn.setToolTip("Insert a knot on the lower surface.")
 
 
         # B-spline degree setting
@@ -93,8 +79,7 @@ class OptimizerSettingsWidget(QGroupBox):
         self.bspline_degree_spin.setMaximum(12)
         self.bspline_degree_spin.setValue(config.DEFAULT_BSPLINE_DEGREE)
         self.bspline_degree_spin.setToolTip(
-            "The degree of the B-spline curves. Higher degree allows for smoother curves (G3+) but may be less stable.\n"
-            "This setting is overridden when 'Single Span' mode is enabled."
+            "The degree of the B-spline curves. Higher degree allows for smoother curves (G3+) but may be less stable."
         )
 
         # Smoothness penalty setting
@@ -120,21 +105,11 @@ class OptimizerSettingsWidget(QGroupBox):
         # --- Layout ------------------------------------------------------
         layout = QVBoxLayout()
 
-        # TE Vector Points row with tangency checkbox
-        te_row = QHBoxLayout()
-        te_row.addWidget(QLabel("TE Vector Points:"))
-        te_row.addWidget(self.te_vector_points_combo)
-        te_row.addWidget(self.enforce_te_tangency_checkbox)
-        te_row.addStretch(1)
-        layout.addLayout(te_row)
-
-
         # Upper B-spline controls
         upper_row = QHBoxLayout()
         upper_row.addWidget(self.upper_cp_label)
         upper_row.addStretch(1)
         upper_row.addWidget(self.upper_insert_btn)
-        upper_row.addWidget(self.upper_remove_btn)
         layout.addLayout(upper_row)
 
         # Lower B-spline controls
@@ -142,7 +117,6 @@ class OptimizerSettingsWidget(QGroupBox):
         lower_row.addWidget(self.lower_cp_label)
         lower_row.addStretch(1)
         lower_row.addWidget(self.lower_insert_btn)
-        lower_row.addWidget(self.lower_remove_btn)
         layout.addLayout(lower_row)
 
         # Degree and Smoothness in same row
@@ -154,13 +128,21 @@ class OptimizerSettingsWidget(QGroupBox):
         params_row.addStretch(1)
         layout.addLayout(params_row)
 
-        # G2, G3, Single Span in same row
+        # G2, G3 in same row
         continuity_row = QHBoxLayout()
         continuity_row.addWidget(self.g2_checkbox)
         continuity_row.addWidget(self.g3_checkbox)
-        continuity_row.addWidget(self.single_span_checkbox)
         continuity_row.addStretch(1)
         layout.addLayout(continuity_row)
+
+        # TE Vector Points row with tangency checkbox
+        te_row = QHBoxLayout()
+        te_row.addWidget(QLabel("TE Vector Points:"))
+        te_row.addWidget(self.te_vector_points_combo)
+        te_row.addWidget(self.enforce_te_tangency_checkbox)
+        te_row.addStretch(1)
+        layout.addLayout(te_row)
+
 
         # Action buttons row
         action_row = QHBoxLayout()
@@ -169,23 +151,10 @@ class OptimizerSettingsWidget(QGroupBox):
 
         self.setLayout(layout)
 
-        # Connect single span checkbox to enable/disable degree spinbox
-        self.single_span_checkbox.toggled.connect(self._update_degree_spin_state)
         # Connect G2/G3 checkboxes for dependency logic
         self.g2_checkbox.toggled.connect(self._update_g3_checkbox_state)
         self.g3_checkbox.toggled.connect(self._update_g2_from_g3)
-        self._update_degree_spin_state()    # Set initial state
         self._update_g3_checkbox_state()    # Set initial G3 state
-
-
-    def _update_degree_spin_state(self):
-        """Enable/disable degree spinbox based on single span mode."""
-        is_single_span = self.single_span_checkbox.isChecked()
-        self.bspline_degree_spin.setEnabled(not is_single_span)
-        if is_single_span:
-            self.bspline_degree_spin.setToolTip("Degree is automatically determined in Single Span mode (control points - 1).")
-        else:
-            self.bspline_degree_spin.setToolTip("The degree of the B-spline curves.")
 
     def _update_g3_checkbox_state(self):
         """Enable/disable G3 checkbox based on G2 state."""

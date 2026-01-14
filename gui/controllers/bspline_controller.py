@@ -30,13 +30,13 @@ class BSplineController:
         """
         if not self.bspline_processor.is_fitted():
             return  # No existing fit, do nothing
-        
+
         if getattr(self.processor, "upper_data", None) is None:
             return  # No data loaded
-        
+
         self.window.status_log.append("Parameter changed, re-fitting B-spline...")
         # Set flag to preserve current CP counts instead of resetting to defaults
-        self._refining_single_span = True
+        self._refitting = True
         self.fit_bspline()
 
     def handle_te_vector_points_changed(self) -> None:
@@ -66,7 +66,7 @@ class BSplineController:
             if tangency_enabled:
                 # Re-fit with new TE vectors, preserving current CP configuration
                 self.window.status_log.append("TE tangency enabled, re-fitting B-spline...")
-                self._refining_single_span = True
+                self._refitting = True
                 self.fit_bspline()
             else:
                 # Just update the plot with existing B-spline (preserves fit)
@@ -102,30 +102,24 @@ class BSplineController:
             # Get TE tangency flag from GUI checkbox
             enforce_te_tangency = self.window.optimizer_panel.enforce_te_tangency_checkbox.isChecked()
             
-            # Get Single Span mode flag from GUI checkbox
-            single_span_mode = self.window.optimizer_panel.single_span_checkbox.isChecked()
-            
             # Get smoothness penalty from GUI
             smoothing_weight = float(self.window.optimizer_panel.smoothness_penalty_spin.value())
             self.bspline_processor.smoothing_weight = smoothing_weight
             
             # Determine control point counts
             # If we're coming from an automatic refinement (knot insertion), we might have asymmetric counts
-            if hasattr(self, "_refining_single_span") and self._refining_single_span:
+            if hasattr(self, "_refitting") and self._refitting:
                 num_cp_upper = self.bspline_processor.num_cp_upper
                 num_cp_lower = self.bspline_processor.num_cp_lower
-                self._refining_single_span = False # Reset flag
+                self._refitting = False # Reset flag
             else:
                 # Normal fit from button click: reset to symmetric GUI value and reset exponents
                 num_cp_upper = num_cp_lower = gui_cp
                 self.bspline_processor.param_exponent_upper = 0.5
                 self.bspline_processor.param_exponent_lower = 0.5
-            
-            # Handle Single Span mode: degree is CP - 1
-            if single_span_mode:
-                pass
-            else:
-                self.bspline_processor.degree = gui_degree
+
+            # Set degree from GUI
+            self.bspline_processor.degree = gui_degree
             
             # Store parameters for use in completion handler
             self._pending_fit_params = {
@@ -134,7 +128,6 @@ class BSplineController:
                 'enforce_g2': enforce_g2,
                 'enforce_g3': enforce_g3,
                 'enforce_te_tangency': enforce_te_tangency,
-                'single_span_mode': single_span_mode,
             }
             
             # Create and configure worker
@@ -149,7 +142,6 @@ class BSplineController:
                 enforce_g2,
                 enforce_g3,
                 enforce_te_tangency,
-                single_span_mode,
             )
             
             # Connect worker signals
@@ -179,16 +171,14 @@ class BSplineController:
             enforce_g2 = params.get('enforce_g2', False)
             enforce_g3 = params.get('enforce_g3', False)
             enforce_te_tangency = params.get('enforce_te_tangency', True)
-            single_span_mode = params.get('single_span_mode', False)
             num_cp_upper = params.get('num_cp_upper', 10)
             num_cp_lower = params.get('num_cp_lower', 10)
-            
+
             # Log continuity settings used
             g2_status = "enabled" if enforce_g2 else "disabled"
             g3_status = "enabled" if enforce_g3 else "disabled"
             te_tangency_status = "enabled" if enforce_te_tangency else "disabled"
-            single_span_status = "enabled" if single_span_mode else "disabled"
-            self.window.status_log.append(f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}, Single Span: {single_span_status}")
+            self.window.status_log.append(f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}")
             
             # Calculate and display errors for each surface
             upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
@@ -208,11 +198,11 @@ class BSplineController:
             self.bspline_processor.last_lower_max_error = lower_max_err
             self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
             
-            # Use the degree that was actually used for fitting (may be modified by Single Span mode)
+            # Use the degree that was actually used for fitting
             max_cp = max(num_cp_upper, num_cp_lower)
             max_deg = max(self.bspline_processor.degree_upper, self.bspline_processor.degree_lower)
             num_spans = max_cp - max_deg
-            span_info = f"1 span" if single_span_mode else f"{num_spans} spans"
+            span_info = f"{num_spans} span" if num_spans == 1 else f"{num_spans} spans"
             self.window.status_log.append(
                 f"B-spline fit OK (degrees {self.bspline_processor.degree_upper}/{self.bspline_processor.degree_lower}, {span_info}). "
                 f"Upper max error: {upper_max_err:.6e}, Lower max error: {lower_max_err:.6e}"
@@ -222,6 +212,8 @@ class BSplineController:
             self.window.optimizer_panel.upper_cp_label.setText(f"Upper CPs: {self.bspline_processor.num_cp_upper}")
             self.window.optimizer_panel.lower_cp_label.setText(f"Lower CPs: {self.bspline_processor.num_cp_lower}")
 
+            # Update button text based on whether CP counts differ from defaults
+            self._update_fit_button_text()
 
             # Trigger plot update with B-spline curves
             self._update_plot_with_bsplines()
@@ -258,14 +250,25 @@ class BSplineController:
         """Enable or disable B-spline operation buttons."""
         is_file_loaded = getattr(self.processor, "upper_data", None) is not None
         is_model_built = self.bspline_processor.is_fitted()
-        
+
         self.window.optimizer_panel.fit_bspline_button.setEnabled(enabled and is_file_loaded)
-        
+
         # Knot control buttons
         self.window.optimizer_panel.upper_insert_btn.setEnabled(enabled and is_model_built)
-        self.window.optimizer_panel.upper_remove_btn.setEnabled(enabled and is_model_built)
         self.window.optimizer_panel.lower_insert_btn.setEnabled(enabled and is_model_built)
-        self.window.optimizer_panel.lower_remove_btn.setEnabled(enabled and is_model_built)
+
+    def _update_fit_button_text(self) -> None:
+        """Update the fit button text based on whether CP counts differ from defaults."""
+        default_cp = config.DEFAULT_BSPLINE_CP
+
+        # Check if current CP counts differ from defaults
+        current_upper_cp = self.bspline_processor.num_cp_upper
+        current_lower_cp = self.bspline_processor.num_cp_lower
+
+        if current_upper_cp != default_cp or current_lower_cp != default_cp:
+            self.window.optimizer_panel.fit_bspline_button.setText("Reset fit")
+        else:
+            self.window.optimizer_panel.fit_bspline_button.setText("Fit B-spline")
 
     def calculate_bspline_fitting_error(
                 self,
@@ -378,52 +381,7 @@ class BSplineController:
         target_data = self.processor.upper_data if target_surface == 'upper' else self.processor.lower_data
         target_curve = self.bspline_processor.upper_curve if target_surface == 'upper' else self.bspline_processor.lower_curve
 
-        # Handle Single Span mode: Elevate degree and shift parameter density
-        if self.window.optimizer_panel.single_span_checkbox.isChecked():
-            _, max_err, max_err_idx, _ = self.calculate_bspline_fitting_error(
-                target_curve,
-                target_data,
-                return_max_error=True,
-            )
-            
-            # Get x-location of max error
-            x_error = target_data[max_err_idx, 0]
-            current_cp = self.bspline_processor.num_cp_upper if target_surface == 'upper' else self.bspline_processor.num_cp_lower
-            
-            if current_cp < 21: # 21 CP = Degree 20
-                if target_surface == 'upper':
-                    self.bspline_processor.num_cp_upper += 1
-                    current_exp = self.bspline_processor.param_exponent_upper
-                else:
-                    self.bspline_processor.num_cp_lower += 1
-                    current_exp = self.bspline_processor.param_exponent_lower
-
-                # Adjust parameter exponent
-                new_exp = current_exp
-                if x_error > 0.6:
-                    new_exp = min(0.8, current_exp + 0.05)
-                elif x_error < 0.1:
-                    new_exp = max(0.35, current_exp - 0.05)
-                
-                if target_surface == 'upper':
-                    self.bspline_processor.param_exponent_upper = new_exp
-                else:
-                    self.bspline_processor.param_exponent_lower = new_exp
-
-                bias_desc = "nose" if new_exp < current_exp else ("tail" if new_exp > current_exp else "neutral")
-                self.window.status_log.append(
-                    f"Single Span: Elevating degree on {target_surface} ({current_cp} -> {current_cp + 1}) "
-                    f"with {bias_desc} bias (exp={new_exp:.2f}, error at x={x_error:.2f})"
-                )
-                
-                self._refining_single_span = True
-                self.fit_bspline()
-                return
-            else:
-                self.window.status_log.append(f"Maximum degree (20) reached for {target_surface} surface.")
-                return
-
-        # Multi-span mode: Insert a knot
+        # Insert a knot
         try:
             _, max_err, _, u_at_max = self.calculate_bspline_fitting_error(
                 target_curve,
@@ -455,38 +413,6 @@ class BSplineController:
 
         except Exception as e:
             self.window.status_log.append(f"Error during knot insertion: {e}")
-
-    def remove_knot(self, surface: str) -> None:
-        """Remove a control point (effectively reducing flexibility) from the specified surface."""
-        if not self.bspline_processor.is_fitted():
-            self.window.status_log.append("No B-spline model fitted.")
-            return
-
-        target_surface = surface
-        current_cp = self.bspline_processor.num_cp_upper if target_surface == 'upper' else self.bspline_processor.num_cp_lower
-        min_cp = self.bspline_processor.degree + 1
-
-        if current_cp <= min_cp:
-            self.window.status_log.append(f"Cannot remove more control points from {target_surface} surface (minimum {min_cp}).")
-            return
-
-        if target_surface == 'upper':
-            self.bspline_processor.num_cp_upper -= 1
-        else:
-            self.bspline_processor.num_cp_lower -= 1
-
-        self.window.status_log.append(f"Removing control point from {target_surface} surface ({current_cp} -> {current_cp - 1}).")
-        
-        # In Single Span mode, we might also want to reset the exponent slightly
-        if self.window.optimizer_panel.single_span_checkbox.isChecked():
-            if target_surface == 'upper':
-                self.bspline_processor.param_exponent_upper = 0.5
-            else:
-                self.bspline_processor.param_exponent_lower = 0.5
-
-        # Re-fit with one fewer CP. We'll use the existing fit_bspline logic but force it to keep current CP counts.
-        self._refining_single_span = True # This flag tells fit_bspline to use processor's current CP counts
-        self.fit_bspline()
 
     def is_te_thickened(self) -> bool:
         """

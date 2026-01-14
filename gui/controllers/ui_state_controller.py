@@ -120,9 +120,7 @@ class UIStateController:
         # B-spline buttons
         opt.fit_bspline_button.setEnabled(is_file_loaded)
         opt.upper_insert_btn.setEnabled(is_model_built)
-        opt.upper_remove_btn.setEnabled(is_model_built)
         opt.lower_insert_btn.setEnabled(is_model_built)
-        opt.lower_remove_btn.setEnabled(is_model_built)
 
         # Comb sliders
         comb.comb_scale_slider.setEnabled(is_model_built)
@@ -225,7 +223,7 @@ class UIStateController:
         opt = self.window.optimizer_panel
         opt.upper_cp_label.setText("Upper CPs: -")
         opt.lower_cp_label.setText("Lower CPs: -")
-
+        opt.fit_bspline_button.setText("Fit B-spline")  # Reset button text
 
         airfoil = self.window.airfoil_settings_panel
         airfoil.toggle_thickening_button.setEnabled(False)  # Disabled until B-spline is fitted

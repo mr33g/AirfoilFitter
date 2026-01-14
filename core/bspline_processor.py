@@ -22,7 +22,7 @@ class BSplineProcessor:
         self.degree: int = int(degree)
         self.degree_upper: int = int(degree)
         self.degree_lower: int = int(degree)
-        self.fitted_degree: int | None = None  # Stores the actual degree used during fitting (may differ from self.degree if single span mode was used)
+        self.fitted_degree: int | None = None  # Stores the actual degree used during fitting
         self.num_cp_upper: int = 10  # Current number of control points for upper surface
         self.num_cp_lower: int = 10  # Current number of control points for lower surface
         self.param_exponent_upper: float = 0.5 # Mapping x -> u (0.5 is sqrt)
@@ -54,7 +54,6 @@ class BSplineProcessor:
         enforce_g2: bool = False,
         enforce_g3: bool = False,
         enforce_te_tangency: bool = True,
-        single_span: bool = False,
     ) -> bool:
         """
         Fit B-splines with G1 and optional G2 constraints at leading edge.
@@ -72,13 +71,9 @@ class BSplineProcessor:
             # G3 requires G2, so if G2 is disabled, disable G3
             self.enforce_g3 = enforce_g3 if enforce_g2 else False
 
-            if single_span:
-                self.degree_upper = num_cp_upper - 1
-                self.degree_lower = num_cp_lower - 1
-            else:
-                # Use current global degree for both
-                self.degree_upper = self.degree
-                self.degree_lower = self.degree
+            # Use current global degree for both surfaces
+            self.degree_upper = self.degree
+            self.degree_lower = self.degree
 
             # Set trailing edge type
             self.is_sharp_te = not is_thickened

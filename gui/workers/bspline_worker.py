@@ -30,7 +30,6 @@ class BSplineWorker(QThread):
         self.enforce_g2 = False
         self.enforce_g3 = False
         self.enforce_te_tangency = True
-        self.single_span = False
         
         # Parameters for insert knot operation
         self.knot_u_value = None
@@ -47,7 +46,6 @@ class BSplineWorker(QThread):
         enforce_g2: bool,
         enforce_g3: bool,
         enforce_te_tangency: bool,
-        single_span: bool,
     ):
         """Set up parameters for a B-spline fitting operation."""
         self.operation_type = 'fit'
@@ -60,7 +58,6 @@ class BSplineWorker(QThread):
         self.enforce_g2 = enforce_g2
         self.enforce_g3 = enforce_g3
         self.enforce_te_tangency = enforce_te_tangency
-        self.single_span = single_span
     
     def setup_insert_knot_operation(
         self,
@@ -89,7 +86,7 @@ class BSplineWorker(QThread):
     def _run_fit(self) -> None:
         """Execute B-spline fitting in the worker thread."""
         self.progress_message.emit("Processing...")
-        
+
         success = self.bspline_processor.fit_bspline(
             self.upper_data,
             self.lower_data,
@@ -100,7 +97,6 @@ class BSplineWorker(QThread):
             self.enforce_g2,
             self.enforce_g3,
             self.enforce_te_tangency,
-            self.single_span,
         )
         
         if success:
@@ -108,8 +104,7 @@ class BSplineWorker(QThread):
             g2_status = "enabled" if self.enforce_g2 else "disabled"
             g3_status = "enabled" if self.enforce_g3 else "disabled"
             te_tangency_status = "enabled" if self.enforce_te_tangency else "disabled"
-            single_span_status = "enabled" if self.single_span else "disabled"
-            message = f"B-spline fitting completed (G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}, Single Span: {single_span_status})"
+            message = f"B-spline fitting completed (G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status})"
             self.finished.emit(True, message)
         else:
             self.finished.emit(False, "B-spline fitting failed.")

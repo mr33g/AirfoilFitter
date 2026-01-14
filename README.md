@@ -52,15 +52,14 @@ python run_gui.py
 2. **Fit B-spline**  
    Click *Fit B-spline* to perform the initial fit. The default configuration uses 5 control points per surface with degree 4.
 
-3. **Adjust Parameters**  
+3. **Adjust Parameters**
    - **Degree**: B-spline polynomial degree (4–12). Higher degrees allow smoother curves but may be less stable.
    - **Smoothness**: Regularization weight. Higher values produce smoother control point distributions at the cost of fitting accuracy.
    - **G2 / G3**: Enable curvature (G2) or curvature-derivative (G3) continuity at the leading edge.
    - **TE tangency**: Constrain trailing edge tangent direction to match the input data.
-   - **Single Span**: Force degree = (control points − 1), producing a single polynomial segment per surface. The result can be imported in Fusion 360.
 
-4. **Refine the Fit**  
-   Use the **+** and **−** buttons next to each surface label to insert or remove control points. In multi-span mode, knots are inserted at the location of maximum deviation. In single-span mode, this elevates the polynomial degree.
+4. **Refine the Fit**
+   Use the **+** buttons next to each surface label to insert control points. Knots are inserted at the location of maximum deviation.
 
 5. **Trailing Edge Thickening**  
    Enter a thickness value in millimeters and click *Apply* to add a blunt trailing edge. The offset is applied using a C² quintic blend that preserves leading edge geometry.
@@ -107,10 +106,6 @@ The fitting algorithm solves a constrained least-squares problem:
 4. **Optimization**: When G2/G3 constraints are enabled, the problem is solved using SLSQP (Sequential Least Squares Programming). The objective function combines fitting error with a smoothness penalty on second-order differences of control points.
 
 5. **Smoothness Penalty**: A gradient-weighted penalty is applied, with lower weight near the leading edge (allowing the curve to follow high curvature) and higher weight toward the trailing edge (reducing oscillation in low-curvature regions).
-
-### Single-Span Mode
-
-When enabled, the degree is set to `(control points − 1)`, resulting in a Bézier curve with a single polynomial segment. This mode is useful for CAD software that has limited support for multi-span NURBS curves (e.g., Fusion 360's native spline tools).
 
 ### Trailing Edge Thickening
 

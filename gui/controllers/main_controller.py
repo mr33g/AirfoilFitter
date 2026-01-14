@@ -68,16 +68,13 @@ class MainController(QObject):
         opt = self.window.optimizer_panel
         opt.fit_bspline_button.clicked.connect(self.bspline_controller.fit_bspline)
         opt.upper_insert_btn.clicked.connect(lambda: self.bspline_controller.insert_knot('upper'))
-        opt.upper_remove_btn.clicked.connect(lambda: self.bspline_controller.remove_knot('upper'))
         opt.lower_insert_btn.clicked.connect(lambda: self.bspline_controller.insert_knot('lower'))
-        opt.lower_remove_btn.clicked.connect(lambda: self.bspline_controller.remove_knot('lower'))
         
         # Parameter changes that trigger re-fit (only if already fitted)
         opt.bspline_degree_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
         opt.smoothness_penalty_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
         opt.g2_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         opt.g3_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
-        opt.single_span_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         opt.enforce_te_tangency_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         
         # TE vector points dropdown - always updates TE vectors, refits only if tangency enabled and fitted
