@@ -3,6 +3,7 @@
 .claude/
 res/
 out/
+doc/
 __pycache__/
 *.pyc
 *cwd
