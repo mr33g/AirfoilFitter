@@ -67,6 +67,7 @@ python run_gui.py
 
 6. **Export**  
    - *Export DXF*: Saves upper and lower B-spline curves as NURBS entities scaled to the specified chord length.
+   - *Export BSP*: Saves control points and knot vectors in AirfoilEditor-compatible `.bsp` format.
    - *Export DAT*: Saves a resampled coordinate file in Selig format.
 
 ### Configuration
@@ -133,6 +134,7 @@ AirfoilFitter/
 └── utils/
     ├── bspline_helper.py   # B-spline utility functions
     ├── data_loader.py      # File format parsing
+    ├── bsp_exporter.py     # BSP output
     └── dxf_exporter.py     # DXF output
 ```
 

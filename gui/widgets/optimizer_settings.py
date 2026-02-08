@@ -49,6 +49,7 @@ class OptimizerSettingsWidget(QGroupBox):
             "Note: G3 requires G2 to be enabled. Enabling G3 will automatically enable G2."
         )
 
+        self.le_continuity_label = QLabel("LE Continuity:")
 
         # Enforce TE vector tangency
         self.enforce_te_tangency_checkbox = QCheckBox("TE tangency")
@@ -143,6 +144,7 @@ class OptimizerSettingsWidget(QGroupBox):
 
         # G2, G3 in same row
         continuity_row = QHBoxLayout()
+        continuity_row.addWidget(self.le_continuity_label)
         continuity_row.addWidget(self.g2_checkbox)
         continuity_row.addWidget(self.g3_checkbox)
         continuity_row.addStretch(1)

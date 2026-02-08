@@ -61,7 +61,7 @@ class MainController(QObject):
         fp = self.window.file_panel
         fp.load_button.clicked.connect(self.file_controller.load_airfoil_file)
         fp.export_dxf_button.clicked.connect(self.file_controller.export_dxf)
-
+        fp.export_bsp_button.clicked.connect(self.file_controller.export_bsp_file)
         fp.export_dat_button.clicked.connect(self.file_controller.export_dat_file)
 
         # Optimization operations
@@ -113,4 +113,4 @@ class MainController(QObject):
         )
 
         # Update button states
-        self.ui_state_controller.update_button_states() 
+        self.ui_state_controller.update_button_states()

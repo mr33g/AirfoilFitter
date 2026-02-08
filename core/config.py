@@ -18,6 +18,8 @@ DEFAULT_SMOOTHNESS_PENALTY: float = 0.001  # Weight for control point smoothing 
 # ---- Manufacturing / Export defaults -------------------------------------
 DEFAULT_CHORD_LENGTH_MM: float = 200.0
 DEFAULT_TE_THICKNESS_MM: float = 0.0
+ENABLE_BSP_EXPORT: bool = False
+ENABLE_DAT_EXPORT: bool = False
 
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000

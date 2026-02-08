@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QFileDialog
 from core.airfoil_processor import AirfoilProcessor
 from core import config
 from utils.dxf_exporter import export_bspline_to_dxf
+from utils.bsp_exporter import export_bspline_to_bsp
 from utils.data_loader import export_airfoil_to_selig_format
 
 
@@ -148,6 +149,10 @@ class FileController:
 
     def export_dat_file(self) -> None:
         """Export the current B-spline model as a high-resolution .dat file."""
+        if not config.ENABLE_DAT_EXPORT:
+            self.processor.log_message.emit("DAT export is disabled in config.")
+            return
+
         # Get the number of points per surface from the UI
         try:
             points_per_surface = self.window.file_panel.points_per_surface_input.value()
@@ -218,4 +223,56 @@ class FileController:
                 return f"{sanitized}_highres.dat"
         return "airfoil_highres.dat"
 
- 
+    def export_bsp_file(self) -> None:
+        """Export the current B-spline model as a .bsp file."""
+        if not config.ENABLE_BSP_EXPORT:
+            self.processor.log_message.emit("BSP export is disabled in config.")
+            return
+
+        bspline_proc = getattr(self.window, "bspline_processor", None)
+        try:
+            bspline_fitted = bool(getattr(bspline_proc, "fitted", False))
+        except Exception:
+            bspline_fitted = False
+
+        if not bspline_fitted:
+            self.processor.log_message.emit(
+                "Error: B-spline model not available for export. Please fit B-spline first."
+            )
+            return
+
+        airfoil_name = getattr(self.processor, "airfoil_name", "airfoil") or "airfoil"
+        default_filename = self._get_default_bsp_filename(f"{airfoil_name}_bspline")
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.window,
+            "Save B-spline .bsp File",
+            default_filename,
+            "BSP Files (*.bsp);;All Files (*)",
+        )
+        if not file_path:
+            self.processor.log_message.emit(".bsp export cancelled by user.")
+            return
+
+        ok = export_bspline_to_bsp(
+            bspline_proc,
+            airfoil_name,
+            file_path,
+            self.processor.log_message.emit,
+        )
+        if ok:
+            self.processor.log_message.emit(
+                f"B-spline .bsp export successful to '{os.path.basename(file_path)}'."
+            )
+        else:
+            self.processor.log_message.emit("Error during B-spline .bsp export.")
+
+    def _get_default_bsp_filename(self, airfoil_name: str) -> str:
+        """Return a safe default filename for .bsp export based on the loaded profile."""
+        import re
+
+        if airfoil_name:
+            sanitized = re.sub(r"[^A-Za-z0-9\-_]+", "_", airfoil_name)
+            if sanitized:
+                return f"{sanitized}.bsp"
+        return "airfoil.bsp"

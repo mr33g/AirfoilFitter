@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from core import config
 
 class FileControlPanel(QGroupBox):
     """Panel containing *Load* and *Export* actions for airfoil files."""
@@ -28,7 +29,10 @@ class FileControlPanel(QGroupBox):
         
         self.export_dxf_button = QPushButton("Export DXF")
         self.export_dxf_button.setMinimumWidth(120)  # Give button a minimum width
-        
+
+        self.export_bsp_button = QPushButton("Export BSP")
+        self.export_bsp_button.setMinimumWidth(120)  # Give button a minimum width
+
         self.export_dat_button = QPushButton("Export DAT")
         self.export_dat_button.setMinimumWidth(120)  # Give button a minimum width
         
@@ -40,6 +44,14 @@ class FileControlPanel(QGroupBox):
         self.points_per_surface_input.setMaximum(1000)
         self.points_per_surface_input.setValue(100)
         self.points_per_surface_input.setMinimumWidth(80)
+
+        if not config.ENABLE_BSP_EXPORT:
+            self.export_bsp_button.setVisible(False)
+
+        if not config.ENABLE_DAT_EXPORT:
+            self.export_dat_button.setVisible(False)
+            self.points_per_surface_label.setVisible(False)
+            self.points_per_surface_input.setVisible(False)
         
         # --- Layout ------------------------------------------------------
         file_layout = QHBoxLayout()
@@ -50,6 +62,7 @@ class FileControlPanel(QGroupBox):
         export_layout = QHBoxLayout()
         export_layout.setSpacing(10)
         export_layout.addWidget(self.export_dxf_button)
+        export_layout.addWidget(self.export_bsp_button)
 
         export_layout.addStretch(1)
 
@@ -67,4 +80,4 @@ class FileControlPanel(QGroupBox):
         main_layout.addLayout(export_layout)
         main_layout.addLayout(dat_export_layout)
 
-        self.setLayout(main_layout) 
+        self.setLayout(main_layout)

@@ -115,7 +115,8 @@ class UIStateController:
 
         # Export buttons
         fp.export_dxf_button.setEnabled(is_model_built)
-        fp.export_dat_button.setEnabled(is_model_built)
+        fp.export_bsp_button.setEnabled(is_model_built and config.ENABLE_BSP_EXPORT)
+        fp.export_dat_button.setEnabled(is_model_built and config.ENABLE_DAT_EXPORT)
 
         # B-spline buttons
         opt.fit_bspline_button.setEnabled(is_file_loaded)
@@ -259,4 +260,4 @@ class UIStateController:
     def handle_thickness_input_changed(self) -> None:
         """Handle changes in the thickness input field."""
         # Update button states when thickness input changes
-        self.update_button_states() 
+        self.update_button_states()
