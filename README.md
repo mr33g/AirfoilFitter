@@ -50,10 +50,11 @@ python run_gui.py
    Click *Load Airfoil File* and select a `.dat` file. Both Selig and Lednicer formats are supported. The application normalizes coordinates to unit chord with the leading edge at the origin.
 
 2. **Fit B-spline**  
-   Click *Fit B-spline* to perform the initial fit. The default configuration uses 5 control points per surface with degree 4.
+   Click *Fit B-spline* to perform the initial fit. The default configuration uses 9 control points per surface with degree 4.
 
 3. **Adjust Parameters**
    - **Degree**: B-spline polynomial degree (4–12). Higher degrees allow smoother curves but may be less stable.
+   - **Initial CP count**: Initial control points per surface. Must be greater than degree. Point inisertion is biased towards the location of max error, so starting from a low initial count will produce different results than a high initial count.
    - **Smoothness**: Regularization weight. Higher values produce smoother control point distributions at the cost of fitting accuracy.
    - **G2 / G3**: Enable curvature (G2) or curvature-derivative (G3) continuity at the leading edge.
    - **TE tangency**: Constrain trailing edge tangent direction to match the input data.
@@ -76,7 +77,7 @@ Runtime defaults are defined in `core/config.py`:
 |----------------------------|---------|--------------------------------------------------|
 | `DEBUG_WORKER_LOGGING`     | False   | Enable verbose control point logging             |
 | `DEFAULT_BSPLINE_DEGREE`   | 4       | Initial B-spline degree                          |
-| `DEFAULT_BSPLINE_CP`       | 5       | Initial control points per surface               |
+| `DEFAULT_BSPLINE_CP`       | 9       | Initial control points per surface               |
 | `DEFAULT_SMOOTHNESS_PENALTY` | 0.01  | Regularization weight                            |
 | `DEFAULT_CHORD_LENGTH_MM`  | 200.0   | Default chord length for export                  |
 

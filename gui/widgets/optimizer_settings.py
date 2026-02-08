@@ -58,7 +58,14 @@ class OptimizerSettingsWidget(QGroupBox):
             "When disabled: Only endpoint constraints are applied, allowing better fit for some airfoils."
         )
 
-
+        # Initial control point count
+        self.initial_cp_label = QLabel("Initial CP count:")
+        self.initial_cp_spin = QSpinBox()
+        self.initial_cp_spin.setMaximum(200)
+        self.initial_cp_spin.setValue(config.DEFAULT_BSPLINE_CP)
+        self.initial_cp_spin.setToolTip(
+            "Initial number of control points per surface. Must be at least degree + 1."
+        )
 
         # B-spline settings (new layout for knots)
         self.upper_cp_label = QLabel("Upper CPs: -")
@@ -87,8 +94,8 @@ class OptimizerSettingsWidget(QGroupBox):
         self.smoothness_penalty_spin = QDoubleSpinBox()
         self.smoothness_penalty_spin.setMinimum(0.0)
         self.smoothness_penalty_spin.setMaximum(1.0)
-        self.smoothness_penalty_spin.setSingleStep(0.001)
-        self.smoothness_penalty_spin.setDecimals(3)
+        self.smoothness_penalty_spin.setSingleStep(0.00001)
+        self.smoothness_penalty_spin.setDecimals(5)
         self.smoothness_penalty_spin.setValue(config.DEFAULT_SMOOTHNESS_PENALTY)
         self.smoothness_penalty_spin.setToolTip(
             "Controls the tradeoff between smoothness and accuracy.\n"
@@ -104,6 +111,12 @@ class OptimizerSettingsWidget(QGroupBox):
 
         # --- Layout ------------------------------------------------------
         layout = QVBoxLayout()
+
+        # Initial control point count
+        inital_row = QHBoxLayout()
+        inital_row.addWidget(self.initial_cp_label)
+        inital_row.addWidget(self.initial_cp_spin)
+        layout.addLayout(inital_row)
 
         # Upper B-spline controls
         upper_row = QHBoxLayout()
@@ -155,6 +168,8 @@ class OptimizerSettingsWidget(QGroupBox):
         self.g2_checkbox.toggled.connect(self._update_g3_checkbox_state)
         self.g3_checkbox.toggled.connect(self._update_g2_from_g3)
         self._update_g3_checkbox_state()    # Set initial G3 state
+        self.bspline_degree_spin.valueChanged.connect(self._sync_initial_cp_min)
+        self._sync_initial_cp_min()
 
     def _update_g3_checkbox_state(self):
         """Enable/disable G3 checkbox based on G2 state."""
@@ -172,3 +187,11 @@ class OptimizerSettingsWidget(QGroupBox):
             self.g2_checkbox.setChecked(True)
             self.g2_checkbox.blockSignals(False)
             self._update_g3_checkbox_state()  # Update G3 state (should enable it) 
+
+    def _sync_initial_cp_min(self) -> None:
+        """Keep initial control point count >= degree + 1."""
+        min_cp = int(self.bspline_degree_spin.value()) + 1
+        if self.initial_cp_spin.minimum() != min_cp:
+            self.initial_cp_spin.setMinimum(min_cp)
+        if self.initial_cp_spin.value() < min_cp:
+            self.initial_cp_spin.setValue(min_cp)

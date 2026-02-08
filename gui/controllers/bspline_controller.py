@@ -90,7 +90,7 @@ class BSplineController:
 
         try:
             # Get control point count and degree from GUI
-            gui_cp = config.DEFAULT_BSPLINE_CP
+            gui_cp = int(self.window.optimizer_panel.initial_cp_spin.value())
             gui_degree = int(self.window.optimizer_panel.bspline_degree_spin.value())
 
             # Get G2 flag from GUI checkbox

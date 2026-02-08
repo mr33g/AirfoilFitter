@@ -11,7 +11,7 @@ from __future__ import annotations
 DEBUG_WORKER_LOGGING: bool = False
 
 # B-spline settings
-DEFAULT_BSPLINE_DEGREE: int = 5  # Degree of B-spline curves (3-7 recommended for airfoils)
+DEFAULT_BSPLINE_DEGREE: int = 4  # Degree of B-spline curves (3-7 recommended for airfoils)
 DEFAULT_BSPLINE_CP: int = 9   # Initial number of control points per surface (must be >= degree + 1)
 DEFAULT_SMOOTHNESS_PENALTY: float = 0.001  # Weight for control point smoothing penalty (higher = smoother, lower = more accurate)
 
