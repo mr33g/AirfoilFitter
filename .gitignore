@@ -4,6 +4,8 @@
 res/
 out/
 doc/
+build/
+dist/
 __pycache__/
 *.pyc
 *cwd

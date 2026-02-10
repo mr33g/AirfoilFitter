@@ -1,6 +1,12 @@
 name: Build Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      build_macos_x64:
+        description: 'Build Intel macOS package (macos-13)'
+        required: false
+        default: 'false'
   push:
     tags:
       - 'v*'
@@ -11,7 +17,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,20 +32,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build executable
+          
+      - name: Install WiX
         run: |
-          pyinstaller --onefile --windowed --name AirfoilFitter --icon img/favicon.ico --add-data "img;img" run_gui.py
+          dotnet tool install --global wix
+          wix extension add -g WixToolset.UI.wixext/6.0.2
+          wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      - name: Build MSI
+        run: |
+          powershell -File setup\windows\build.ps1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: AirfoilFitter-Windows
-          path: dist/AirfoilFitter.exe
+          path: dist/AirfoilFitter-*.msi
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AirfoilFitter.exe
+          files: dist/AirfoilFitter-*.msi
 
+  # macOS builds are disabled until we can test them locally.

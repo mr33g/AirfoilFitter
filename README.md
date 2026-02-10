@@ -4,12 +4,18 @@ A desktop application for fitting B-spline curves to airfoil coordinate data and
 
 ## Installation
 
-### Requirements
+### Automatic Installation
+
+Download and execute the latest .msi installer package.
+
+### Manual Installation
+
+#### Requirements
 
 - Python 3.10 or later
 - Windows, macOS, or Linux
 
-### Setup
+#### Installation Procedure
 
 1. Clone or download this repository.
 
@@ -25,16 +31,18 @@ A desktop application for fitting B-spline curves to airfoil coordinate data and
    pip install -r requirements.txt
    ```
 
-### Dependencies
+#### Dependencies
 
-| Package   | Purpose                              |
-|-----------|--------------------------------------|
-| numpy     | Numerical operations                 |
-| scipy     | B-spline fitting and optimization    |
-| PySide6   | Qt GUI framework                     |
-| pyqtgraph | Interactive plotting                 |
-| ezdxf     | DXF file export                      |
-| joblib    | Parallel processing utilities        |
+| Package    | Purpose                              |
+|------------|--------------------------------------|
+| numpy      | Numerical operations                 |
+| scipy      | B-spline fitting and optimization    |
+| PySide6    | Qt GUI framework                     |
+| pyqtgraph  | Interactive plotting                 |
+| ezdxf      | DXF file export                      |
+| joblib     | Parallel processing utilities        |
+| pyinstaller| Installer utilities                  |
+
 
 ## Usage
 
@@ -83,8 +91,6 @@ Runtime defaults are defined in `core/config.py`:
 | `DEFAULT_CHORD_LENGTH_MM`  | 200.0   | Default chord length for export                  |
 
 ## Background
-
-### Problem Statement
 
 Airfoil coordinates from sources like the UIUC database are provided as discrete point sets. Importing these directly into CAD software typically results in polylines or low-quality splines that are difficult to edit and may introduce surface artifacts. Extreme cases might even cause problems in CAM due to excessive tool acceleration. 
 

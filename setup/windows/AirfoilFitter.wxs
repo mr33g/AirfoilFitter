@@ -1,0 +1,90 @@
+<?ifndef Version ?>
+  <?define Version = "1.0.0" ?>
+<?endif?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Airfoil Fitter"
+           Manufacturer="Michael Reeg"
+           Version="$(var.Version)"
+           UpgradeCode="2B5A2E3F-7A86-4D3D-B15F-7A9C7D2F3F9E"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <InstallExecuteSequence>
+      <DisableRollback After="InstallInitialize" />
+    </InstallExecuteSequence>
+
+    <ui:WixUI Id="WixUI_Advanced" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+    <Icon Id="AppIcon.ico" SourceFile="../../img/favicon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <Property Id="MSIINSTALLPERUSER" Value="1" />
+    <Property Id="ApplicationFolderName" Value="AirfoilFitter" />
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
+
+    <Property Id="INSTALLFOLDER_PATH" Secure="yes">
+      <RegistrySearch Id="FindInstallFolder" Root="HKCU" Key="Software\AirfoilFitter" Name="InstallPath" Type="raw" />
+    </Property>
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="APPLICATIONFOLDER" Name="AirfoilFitter" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuDir" Name="Airfoil Fitter" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <ComponentGroup Id="ProductComponents" Directory="APPLICATIONFOLDER">
+      <Component Id="InstallPathRegistry" Guid="A5B39D7B-5C0C-4F83-9EAA-8B5E1A4C5E9D">
+        <RegistryValue Root="HKCU" Key="Software\AirfoilFitter" Name="installed" Type="integer" Value="1" Action="write" />
+        <RegistryValue Root="HKCU" Key="Software\AirfoilFitter" Name="InstallPath" Type="string" Value="[APPLICATIONFOLDER]" Action="write" />
+        <util:RemoveFolderEx Id="RemoveInstallFolder" On="uninstall" Property="INSTALLFOLDER_PATH" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="StartMenuShortcutComponents" Directory="ProgramMenuDir">
+      <Component Id="StartMenuShortcut" Guid="F13D5CE3-9C33-4D5B-8F65-3D64A7E4C8AF">
+        <Shortcut Id="StartMenuAirfoilFitter"
+                  Name="Airfoil Fitter"
+                  Description="Airfoil Fitter"
+                  Target="[APPLICATIONFOLDER]AirfoilFitter.exe"
+                  WorkingDirectory="APPLICATIONFOLDER" />
+        <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\AirfoilFitter\Shortcuts" Name="StartMenu" Type="integer" Value="1" Action="write" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="DesktopShortcutComponents" Directory="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="D72D0C7E-78D9-4B08-9B1F-5E64C5F0A8AD">
+        <Shortcut Id="DesktopAirfoilFitter"
+                  Name="Airfoil Fitter"
+                  Description="Airfoil Fitter"
+                  Target="[APPLICATIONFOLDER]AirfoilFitter.exe"
+                  WorkingDirectory="APPLICATIONFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\AirfoilFitter\Shortcuts" Name="Desktop" Type="integer" Value="1" Action="write" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="MainFeature" Title="Airfoil Fitter" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="HarvestedAppFiles" />
+    </Feature>
+
+    <Feature Id="StartMenuShortcuts" Title="Start Menu Shortcut" Level="1" AllowAbsent="yes">
+      <ComponentGroupRef Id="StartMenuShortcutComponents" />
+    </Feature>
+
+    <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="1" AllowAbsent="yes">
+      <ComponentGroupRef Id="DesktopShortcutComponents" />
+    </Feature>
+
+  </Package>
+</Wix>
