@@ -35,6 +35,13 @@ $msiOut = Join-Path $distDir "AirfoilFitter-$Version.msi"
 Push-Location $root
 try {
     pyinstaller AirfoilFitter.spec --noconfirm --clean
+    $configSource = Join-Path $root "airfoilfitter.config.json"
+    $configDest = Join-Path $distDir "AirfoilFitter\\airfoilfitter.config.json"
+    if (Test-Path $configSource) {
+        Copy-Item -Path $configSource -Destination $configDest -Force
+    } else {
+        throw "Missing config template: $configSource"
+    }
 } finally {
     Pop-Location
 }

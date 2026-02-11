@@ -80,15 +80,37 @@ python run_gui.py
 
 ### Configuration
 
-Runtime defaults are defined in `core/config.py`:
+Runtime defaults are defined in `core/config.py`.
+For packaged app installs, the installer ships a user-editable
+`airfoilfitter.config.json` next to `AirfoilFitter.exe` in the install folder.
+If this file exists, matching uppercase keys override defaults at startup.
+You can also point to a custom file with `AIRFOILFITTER_CONFIG`.
 
-| Parameter                  | Default | Description                                      |
-|----------------------------|---------|--------------------------------------------------|
-| `DEBUG_WORKER_LOGGING`     | False   | Enable verbose control point logging             |
-| `DEFAULT_BSPLINE_DEGREE`   | 4       | Initial B-spline degree                          |
-| `DEFAULT_BSPLINE_CP`       | 9       | Initial control points per surface               |
-| `DEFAULT_SMOOTHNESS_PENALTY` | 0.01  | Regularization weight                            |
-| `DEFAULT_CHORD_LENGTH_MM`  | 200.0   | Default chord length for export                  |
+Override lookup order:
+1. Path from `AIRFOILFITTER_CONFIG` (if set)
+2. `airfoilfitter.config.json` next to the executable
+3. `airfoilfitter.config.json` in the project root (development fallback)
+
+Available keys:
+
+| Parameter                    | Default | Description                                              |
+|------------------------------|---------|----------------------------------------------------------|
+| `DEBUG_WORKER_LOGGING`       | False   | Enable verbose worker logging                            |
+| `DEFAULT_BSPLINE_DEGREE`     | 4       | Initial B-spline degree                                  |
+| `DEFAULT_BSPLINE_CP`         | 9       | Initial control points per surface                       |
+| `DEFAULT_SMOOTHNESS_PENALTY` | 0.001   | Regularization weight for control point smoothing        |
+| `DEFAULT_CHORD_LENGTH_MM`    | 200.0   | Default chord length used for export scaling             |
+| `DEFAULT_TE_THICKNESS_MM`    | 0.0     | Default trailing edge thickness value in the UI          |
+| `ENABLE_BSP_EXPORT`          | False   | Enable BSP export action                                 |
+| `ENABLE_DAT_EXPORT`          | False   | Enable DAT export action                                 |
+| `NUM_POINTS_CURVE_ERROR`     | 35000   | Sampling density used for curve error evaluation         |
+| `PLOT_POINTS_PER_SURFACE`    | 500     | Base number of sampled points per plotted surface        |
+| `PLOT_CURVATURE_WEIGHT`      | 0.85    | Plot sampling blend (0.0 uniform to 1.0 curvature-based) |
+| `COMB_DENSITY_MIN`           | 100     | Minimum allowed curvature comb density                   |
+| `COMB_DENSITY_MAX`           | 1000    | Maximum allowed curvature comb density                   |
+| `COMB_DENSITY_DEFAULT`       | 200     | Default curvature comb density                           |
+| `COMB_SCALE_DEFAULT`         | 0.02    | Default curvature comb scale factor                      |
+| `DEFAULT_TE_VECTOR_POINTS`   | 2       | Points used to estimate trailing edge tangent direction  |
 
 ## Background
 
