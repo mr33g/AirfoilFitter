@@ -6,7 +6,9 @@ out/
 doc/
 build/
 dist/
+tests/
 __pycache__/
 *.pyc
 *cwd
 setup/windows/Files.wxs
+airfoilfitter.config.json

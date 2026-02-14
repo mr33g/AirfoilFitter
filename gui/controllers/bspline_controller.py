@@ -303,9 +303,11 @@ class BSplineController:
             if len(t_samples) > 0:
                 t_samples[-1] = min(t_samples[-1], 1.0 - 1e-12)
             sampled_curve_points = bspline_curve(t_samples)
-            sampled_curve_points = sampled_curve_points[np.argsort(sampled_curve_points[:, 0])]
+            sort_idx = np.argsort(sampled_curve_points[:, 0])
+            sampled_curve_points = sampled_curve_points[sort_idx]
+            t_sorted = t_samples[sort_idx]
             tree = cKDTree(sampled_curve_points)
-            min_dists, _ = tree.query(original_data, k=1)
+            min_dists, nn_curve_idx = tree.query(original_data, k=1)
             sum_sq = float(np.sum(min_dists ** 2))
             if return_all:
                 rms = float(np.sqrt(np.mean(min_dists ** 2)))
@@ -313,11 +315,9 @@ class BSplineController:
             if return_max_error:
                 max_error = float(np.max(min_dists))
                 max_error_idx = int(np.argmax(min_dists))
-                
-                # Get the parameter value (u) corresponding to the max error index in original_data
-                from utils import bspline_helper # Import here to avoid circular dependency
-                u_params_original = bspline_helper.create_parameter_from_x_coords(original_data)
-                u_at_max_error = u_params_original[max_error_idx]
+                nearest_curve_idx = int(nn_curve_idx[max_error_idx])
+                nearest_curve_idx = max(0, min(nearest_curve_idx, len(t_sorted) - 1))
+                u_at_max_error = float(t_sorted[nearest_curve_idx])
 
                 return sum_sq, max_error, max_error_idx, u_at_max_error
             return sum_sq

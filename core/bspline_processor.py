@@ -33,6 +33,8 @@ class BSplineProcessor:
         self.enforce_g3: bool = False
         self.g2_weight: float = 100.0  # Weight for G2 constraint in optimization
         self.smoothing_weight: float = config.DEFAULT_SMOOTHNESS_PENALTY  # Weight for control point smoothing penalty
+        self.last_error_message: str | None = None
+        self.last_optimizer_info: dict | None = None
         
         self.upper_original_data: np.ndarray | None = None
         self.lower_original_data: np.ndarray | None = None
@@ -60,6 +62,8 @@ class BSplineProcessor:
         num_control_points can be a single int (symmetric) or a tuple (upper, lower).
         """
         try:
+            self.last_error_message = None
+            self.last_optimizer_info = None
             if isinstance(num_control_points, tuple):
                 num_cp_upper, num_cp_lower = num_control_points
             else:
@@ -134,7 +138,8 @@ class BSplineProcessor:
             
             return True
             
-        except Exception:
+        except Exception as exc:
+            self.last_error_message = f"fit_bspline failed: {exc}"
             self.fitted = False
             return False
 
@@ -173,6 +178,10 @@ class BSplineProcessor:
         num_cp_upper = len(self.upper_knot_vector) - self.degree_upper - 1
         num_cp_lower = len(self.lower_knot_vector) - self.degree_lower - 1
 
+        # Precompute basis matrices for objective evaluations
+        basis_upper = bspline_helper.build_basis_matrix(u_params_upper, self.upper_knot_vector, self.degree_upper)
+        basis_lower = bspline_helper.build_basis_matrix(u_params_lower, self.lower_knot_vector, self.degree_lower)
+
         # Number of free variables per surface
         n_fixed = 3  # P0, P1, P2 are partially constrained
         n_free_upper = num_cp_upper - n_fixed
@@ -198,33 +207,41 @@ class BSplineProcessor:
         
         initial_vars = np.array(initial_vars)
         
+        if num_cp_upper > 2:
+            idx_u = np.arange(num_cp_upper - 2, dtype=float)
+            grad_upper = 0.5 + 1.5 * (idx_u / (num_cp_upper - 3)) if num_cp_upper > 3 else np.ones(num_cp_upper - 2)
+            smooth_w_upper = grad_upper * grad_upper
+        else:
+            smooth_w_upper = np.zeros(0, dtype=float)
+
+        if num_cp_lower > 2:
+            idx_l = np.arange(num_cp_lower - 2, dtype=float)
+            grad_lower = 0.5 + 1.5 * (idx_l / (num_cp_lower - 3)) if num_cp_lower > 3 else np.ones(num_cp_lower - 2)
+            smooth_w_lower = grad_lower * grad_lower
+        else:
+            smooth_w_lower = np.zeros(0, dtype=float)
+
         def objective(vars):
             """Minimize fitting error."""
             # Reconstruct control points from variables
             cp_upper, cp_lower = self._vars_to_control_points(vars, num_cp_upper, num_cp_lower)
-            
-            # Evaluate fitted curves at data points
-            curve_upper = interpolate.BSpline(self.upper_knot_vector, cp_upper, self.degree_upper)
-            curve_lower = interpolate.BSpline(self.lower_knot_vector, cp_lower, self.degree_lower)
-            
-            fitted_upper = np.array([curve_upper(u) for u in u_params_upper])
-            fitted_lower = np.array([curve_lower(u) for u in u_params_lower])
-            
+
+            # Evaluate fitted curves at data points from precomputed bases
+            fitted_upper = basis_upper @ cp_upper
+            fitted_lower = basis_lower @ cp_lower
+
             # Compute fitting error
-            error_upper = np.sum((upper_data - fitted_upper)**2)
-            error_lower = np.sum((lower_data - fitted_lower)**2)
+            error_upper = float(np.sum((upper_data - fitted_upper) ** 2))
+            error_lower = float(np.sum((lower_data - fitted_lower) ** 2))
 
             # Compute smoothing penalty (penalize second-order differences of control points)
-            # Use a gradient to allow more flexibility at the LE and more stiffness at the TE
             smoothing_penalty = 0.0
-            for i in range(num_cp_upper - 2):
-                gradient = 0.5 + 1.5 * (i / (num_cp_upper - 3)) if num_cp_upper > 3 else 1.0
-                diff_upper = cp_upper[i+2] - 2 * cp_upper[i+1] + cp_upper[i]
-                smoothing_penalty += np.sum(diff_upper**2) * (gradient**2)
-            for i in range(num_cp_lower - 2):
-                gradient = 0.5 + 1.5 * (i / (num_cp_lower - 3)) if num_cp_lower > 3 else 1.0
-                diff_lower = cp_lower[i+2] - 2 * cp_lower[i+1] + cp_lower[i]
-                smoothing_penalty += np.sum(diff_lower**2) * (gradient**2)
+            if smooth_w_upper.size:
+                diff_upper = np.diff(cp_upper, n=2, axis=0)
+                smoothing_penalty += float(np.sum((diff_upper ** 2) * smooth_w_upper[:, np.newaxis]))
+            if smooth_w_lower.size:
+                diff_lower = np.diff(cp_lower, n=2, axis=0)
+                smoothing_penalty += float(np.sum((diff_lower ** 2) * smooth_w_lower[:, np.newaxis]))
 
             return error_upper + error_lower + self.smoothing_weight * smoothing_penalty
         
@@ -314,12 +331,22 @@ class BSplineProcessor:
             bounds=bounds,
             options={'ftol': 1e-7, 'maxiter': max_iter, 'disp': False}
         )
+        self.last_optimizer_info = {
+            "success": bool(result.success),
+            "status": int(result.status),
+            "message": str(result.message),
+            "iterations": int(getattr(result, "nit", -1)),
+            "objective": float(getattr(result, "fun", np.nan)),
+        }
         
         if result.success or result.status == 0:
             self.upper_control_points, self.lower_control_points = \
                 self._vars_to_control_points(result.x, num_cp_upper, num_cp_lower)
             return True
         else:
+            self.last_error_message = (
+                f"G2 optimization failed (status={result.status}): {result.message}"
+            )
             return False
 
     def _vars_to_control_points(self, vars: np.ndarray, num_cp_upper: int, num_cp_lower: int) -> tuple[np.ndarray, np.ndarray]:
@@ -575,6 +602,8 @@ class BSplineProcessor:
     def reset_model_state(self) -> None:
         """Reset fitted model state when loading a new airfoil."""
         self.fitted = False
+        self.last_error_message = None
+        self.last_optimizer_info = None
         self.upper_control_points = None
         self.lower_control_points = None
         self.upper_curve = None
@@ -709,6 +738,80 @@ class BSplineProcessor:
         except Exception:
             return False
 
+    def _apply_knot_insertions(self, new_knots: list[float], surface: str | None = None) -> bool:
+        """Apply knot insertion to selected surfaces without re-fitting or finalizing."""
+        if not new_knots:
+            return True
+
+        sorted_new_knots = sorted(new_knots)
+
+        if surface is None or surface == 'upper':
+            if self.upper_control_points is None or self.upper_knot_vector is None:
+                return False
+            current_upper_cps = self.upper_control_points.copy()
+            current_upper_knots = self.upper_knot_vector.copy()
+            for knot in sorted_new_knots:
+                current_upper_cps, current_upper_knots = bspline_helper.insert_knot(
+                    current_upper_cps, current_upper_knots, self.degree_upper, knot
+                )
+            self.upper_control_points = current_upper_cps
+            self.upper_knot_vector = current_upper_knots
+            self.num_cp_upper = len(self.upper_control_points)
+
+        if surface is None or surface == 'lower':
+            if self.lower_control_points is None or self.lower_knot_vector is None:
+                return False
+            current_lower_cps = self.lower_control_points.copy()
+            current_lower_knots = self.lower_knot_vector.copy()
+            for knot in sorted_new_knots:
+                current_lower_cps, current_lower_knots = bspline_helper.insert_knot(
+                    current_lower_cps, current_lower_knots, self.degree_lower, knot
+                )
+            self.lower_control_points = current_lower_cps
+            self.lower_knot_vector = current_lower_knots
+            self.num_cp_lower = len(self.lower_control_points)
+
+        return True
+
+    def _refit_after_knot_insertion(self) -> bool:
+        """Re-fit using current knot vectors and control-point counts."""
+        if self.upper_original_data is None or self.lower_original_data is None:
+            return True
+
+        cp_counts = (self.num_cp_upper, self.num_cp_lower)
+        if self.enforce_g2:
+            success = self._fit_with_g2_optimization(
+                self.upper_original_data,
+                self.lower_original_data,
+                cp_counts,
+                upper_te_dir=None,
+                lower_te_dir=None,
+                enforce_te_tangency=False,
+                use_existing_knot_vectors=True,
+            )
+            if not success:
+                self._fit_g1_independent(
+                    self.upper_original_data,
+                    self.lower_original_data,
+                    cp_counts,
+                    upper_te_dir=None,
+                    lower_te_dir=None,
+                    enforce_te_tangency=False,
+                    use_existing_knot_vectors=True,
+                )
+        else:
+            self._fit_g1_independent(
+                self.upper_original_data,
+                self.lower_original_data,
+                cp_counts,
+                upper_te_dir=None,
+                lower_te_dir=None,
+                enforce_te_tangency=False,
+                use_existing_knot_vectors=True,
+            )
+
+        return True
+
     def refine_curve_with_knots(self, new_knots: list[float], surface: str | None = None) -> bool:
         """
         Refine the B-spline curves by inserting new knots.
@@ -729,67 +832,10 @@ class BSplineProcessor:
             return True
 
         try:
-            # Sort knots to insert them in ascending order
-            sorted_new_knots = sorted(new_knots)
-            
-            # Apply knot insertion to upper curve (if requested)
-            if surface is None or surface == 'upper':
-                current_upper_cps = self.upper_control_points.copy()
-                current_upper_knots = self.upper_knot_vector.copy()
-                for knot in sorted_new_knots:
-                    current_upper_cps, current_upper_knots = bspline_helper.insert_knot(
-                        current_upper_cps, current_upper_knots, self.degree_upper, knot
-                    )
-                self.upper_control_points = current_upper_cps
-                self.upper_knot_vector = current_upper_knots
-                self.num_cp_upper = len(self.upper_control_points)
-
-            # Apply knot insertion to lower curve (if requested)
-            if surface is None or surface == 'lower':
-                current_lower_cps = self.lower_control_points.copy()
-                current_lower_knots = self.lower_knot_vector.copy()
-                for knot in sorted_new_knots:
-                    current_lower_cps, current_lower_knots = bspline_helper.insert_knot(
-                        current_lower_cps, current_lower_knots, self.degree_lower, knot
-                    )
-                self.lower_control_points = current_lower_cps
-                self.lower_knot_vector = current_lower_knots
-                self.num_cp_lower = len(self.lower_control_points)
-
-            # After knot insertion, re-fit the curves with the new knot vector
-            if self.upper_original_data is not None and self.lower_original_data is not None:
-                cp_counts = (self.num_cp_upper, self.num_cp_lower)
-                
-                if self.enforce_g2:
-                    success = self._fit_with_g2_optimization(
-                        self.upper_original_data,
-                        self.lower_original_data,
-                        cp_counts,
-                        upper_te_dir=None,
-                        lower_te_dir=None,
-                        enforce_te_tangency=False,
-                        use_existing_knot_vectors=True
-                    )
-                    if not success:
-                        self._fit_g1_independent(
-                            self.upper_original_data,
-                            self.lower_original_data,
-                            cp_counts,
-                            upper_te_dir=None,
-                            lower_te_dir=None,
-                            enforce_te_tangency=False,
-                            use_existing_knot_vectors=True
-                        )
-                else:
-                    self._fit_g1_independent(
-                        self.upper_original_data,
-                        self.lower_original_data,
-                        cp_counts,
-                        upper_te_dir=None,
-                        lower_te_dir=None,
-                        enforce_te_tangency=False,
-                        use_existing_knot_vectors=True
-                    )
+            if not self._apply_knot_insertions(new_knots, surface=surface):
+                return False
+            if not self._refit_after_knot_insertion():
+                return False
 
             # Rebuild curves with updated control points and knot vectors
             self._finalize_curves()
@@ -797,5 +843,37 @@ class BSplineProcessor:
             
             return True
 
-        except Exception:
+        except Exception as exc:
+            self.last_error_message = f"refine_curve_with_knots failed: {exc}"
+            return False
+
+    def refine_curves_with_surface_knots(
+        self,
+        *,
+        upper_knots: list[float] | None = None,
+        lower_knots: list[float] | None = None,
+    ) -> bool:
+        """
+        Insert knots on upper/lower surfaces and perform a single mandatory refit.
+        """
+        if not self.fitted or self.upper_curve is None or self.lower_curve is None:
+            return False
+
+        upper_knots = upper_knots or []
+        lower_knots = lower_knots or []
+        if not upper_knots and not lower_knots:
+            return True
+
+        try:
+            if upper_knots and not self._apply_knot_insertions(upper_knots, surface='upper'):
+                return False
+            if lower_knots and not self._apply_knot_insertions(lower_knots, surface='lower'):
+                return False
+            if not self._refit_after_knot_insertion():
+                return False
+            self._finalize_curves()
+            self._validate_continuity()
+            return True
+        except Exception as exc:
+            self.last_error_message = f"refine_curves_with_surface_knots failed: {exc}"
             return False
