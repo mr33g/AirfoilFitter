@@ -25,11 +25,18 @@ class FileController:
         self.processor = processor
         self.window = window
         self.ui_state_controller = ui_state_controller
+
+    def _get_bspline_processor(self):
+        """Return the canonical B-spline processor instance."""
+        bspline_controller = getattr(self.window, "bspline_controller", None)
+        if bspline_controller is not None:
+            bspline_proc = getattr(bspline_controller, "bspline_processor", None)
+            if bspline_proc is not None:
+                return bspline_proc
+        return getattr(self.window, "bspline_processor", None)
     
     def load_airfoil_file(self) -> None:
         """Handle loading an airfoil data file."""
-        # Clear the plot when loading a new file
-        self.window.plot_widget.clear()
         file_path, _ = QFileDialog.getOpenFileName(
             self.window,
             "Load Airfoil Data",
@@ -39,6 +46,9 @@ class FileController:
 
         if not file_path:
             return
+
+        # Clear only once a new file has actually been selected
+        self.window.plot_widget.clear()
 
         self.window.file_panel.file_path_label.setText(os.path.basename(file_path))
 
@@ -64,7 +74,7 @@ class FileController:
     def export_dxf(self) -> None:
         """Export the current B-spline model as a DXF file."""
         # Check if B-spline is available and fitted
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         bspline_fitted = False
         if bspline_proc is not None:
             try:
@@ -85,7 +95,7 @@ class FileController:
     def export_bspline_dxf(self) -> None:
         """Export the current B-spline model as a DXF file."""
         # Check if B-spline processor is available and fitted
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         if bspline_proc is None or not getattr(bspline_proc, "fitted", False):
             self.processor.log_message.emit(
                 "Error: B-spline model not available for export. Please fit B-spline first."
@@ -168,7 +178,7 @@ class FileController:
             airfoil_name = "airfoil"
 
         # Check if B-spline is available and fitted
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         try:
             bspline_fitted = bool(getattr(bspline_proc, "fitted", False))
         except Exception:
@@ -229,7 +239,7 @@ class FileController:
             self.processor.log_message.emit("BSP export is disabled in config.")
             return
 
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         try:
             bspline_fitted = bool(getattr(bspline_proc, "fitted", False))
         except Exception:

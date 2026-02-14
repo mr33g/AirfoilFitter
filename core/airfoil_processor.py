@@ -78,23 +78,7 @@ class AirfoilProcessor(QObject):
             self.log_message.emit("No airfoil data available to plot.")
             return
 
-        # Use stored TE tangent vectors from core_processor
-        upper_te_tangent_vector = self.upper_te_tangent_vector
-        lower_te_tangent_vector = self.lower_te_tangent_vector
-
-        plot_data = {
-            'upper_data': self.upper_data,
-            'lower_data': self.lower_data,
-            'upper_te_tangent_vector': upper_te_tangent_vector,
-            'lower_te_tangent_vector': lower_te_tangent_vector,
-            'geometry_metrics': None,
-        }
-
-        # Geometry metrics calculation removed - was Bezier-specific
-        plot_data['geometry_metrics'] = None
-
-        self._last_plot_data = plot_data.copy()
-        self.plot_update_requested.emit(plot_data)
+        self.emit_plot_update()
 
     def recalculate_te_vectors_and_update_plot(self, te_vector_points):
         """
@@ -112,18 +96,7 @@ class AirfoilProcessor(QObject):
         self.upper_te_tangent_vector = upper_te_tangent_vector
         self.lower_te_tangent_vector = lower_te_tangent_vector
         
-        # Create plot data that preserves existing model data while updating TE vectors
-        plot_data = {
-            'upper_data': self.upper_data,
-            'lower_data': self.lower_data,
-            'upper_te_tangent_vector': upper_te_tangent_vector,
-            'lower_te_tangent_vector': lower_te_tangent_vector,
-            'geometry_metrics': None,
-        }
-        
-        plot_data['geometry_metrics'] = None
-        
-        self.plot_update_requested.emit(plot_data)
+        self.emit_plot_update()
         self.log_message.emit(f"Trailing edge vectors recalculated with {te_vector_points} points.")
 
     def recalculate_te_vectors(self, te_vector_points: int) -> None:
@@ -145,6 +118,59 @@ class AirfoilProcessor(QObject):
     def update_plot(self) -> None:
         """Request a plot update with the current airfoil data (without B-spline)."""
         self._request_plot_update()
+
+    def build_plot_payload(
+        self,
+        *,
+        bspline_processor=None,
+        comb_bspline=None,
+    ) -> dict:
+        """Build a complete plot payload from current core state and optional B-spline state."""
+        plot_data = {
+            'upper_data': self.upper_data,
+            'lower_data': self.lower_data,
+            'upper_te_tangent_vector': self.upper_te_tangent_vector,
+            'lower_te_tangent_vector': self.lower_te_tangent_vector,
+            'geometry_metrics': None,
+        }
+
+        if bspline_processor is None:
+            return plot_data
+
+        plot_data.update(
+            {
+                'bspline_upper_curve': bspline_processor.upper_curve,
+                'bspline_lower_curve': bspline_processor.lower_curve,
+                'bspline_upper_control_points': bspline_processor.upper_control_points,
+                'bspline_lower_control_points': bspline_processor.lower_control_points,
+                'comb_bspline': comb_bspline,
+                'bspline_is_blunt': not bspline_processor.is_sharp_te,
+                'bspline_num_cp_upper': bspline_processor.num_cp_upper,
+                'bspline_num_cp_lower': bspline_processor.num_cp_lower,
+            }
+        )
+
+        if hasattr(bspline_processor, 'last_upper_max_error'):
+            plot_data['bspline_upper_max_error'] = bspline_processor.last_upper_max_error
+            plot_data['bspline_upper_max_error_idx'] = bspline_processor.last_upper_max_error_idx
+            plot_data['bspline_lower_max_error'] = bspline_processor.last_lower_max_error
+            plot_data['bspline_lower_max_error_idx'] = bspline_processor.last_lower_max_error_idx
+
+        return plot_data
+
+    def emit_plot_update(
+        self,
+        *,
+        bspline_processor=None,
+        comb_bspline=None,
+    ) -> None:
+        """Emit a plot update request from a centrally generated payload."""
+        plot_data = self.build_plot_payload(
+            bspline_processor=bspline_processor,
+            comb_bspline=comb_bspline,
+        )
+        self._last_plot_data = plot_data.copy()
+        self.plot_update_requested.emit(plot_data)
 
     def _calculate_te_tangent(self, upper_data, lower_data, te_vector_points):
         """

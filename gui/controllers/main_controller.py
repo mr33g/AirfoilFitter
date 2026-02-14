@@ -101,9 +101,6 @@ class MainController(QObject):
         except Exception:
             chord_length_mm = None
 
-        # Clear the plot
-        self.window.plot_widget.clear()
-        
         # Remove chord_length_mm from plot_data to avoid duplicate parameter
         plot_data_without_chord = {k: v for k, v in plot_data.items() if k != 'chord_length_mm'}
         

@@ -565,6 +565,26 @@ class BSplineProcessor:
         """Check if B-splines have been successfully fitted."""
         return self.fitted and self.upper_curve is not None and self.lower_curve is not None
 
+    def has_ui_applied_te_thickening(self) -> bool:
+        """Return True when UI-driven TE thickening backup state exists."""
+        return (
+            self._backup_upper_control_points is not None
+            and self._backup_lower_control_points is not None
+        )
+
+    def reset_model_state(self) -> None:
+        """Reset fitted model state when loading a new airfoil."""
+        self.fitted = False
+        self.upper_control_points = None
+        self.lower_control_points = None
+        self.upper_curve = None
+        self.lower_curve = None
+        self.is_sharp_te = True
+        self._backup_upper_control_points = None
+        self._backup_lower_control_points = None
+        self._backup_upper_knot_vector = None
+        self._backup_lower_knot_vector = None
+
     def calculate_curvature_comb_data(self, num_points_per_segment=200, scale_factor=0.050):
         """Calculate curvature comb visualization data."""
         if not self.is_fitted():

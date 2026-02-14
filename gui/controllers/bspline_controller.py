@@ -85,6 +85,8 @@ class BSplineController:
 
         # Check if a worker is already running
         if self._current_worker is not None and self._current_worker.isRunning():
+            if hasattr(self, "_refitting"):
+                self._refitting = False
             self.window.status_log.append("A B-spline operation is already in progress. Please wait.")
             return
 
@@ -248,14 +250,28 @@ class BSplineController:
     
     def _set_buttons_enabled(self, enabled: bool) -> None:
         """Enable or disable B-spline operation buttons."""
+        opt = self.window.optimizer_panel
         is_file_loaded = getattr(self.processor, "upper_data", None) is not None
         is_model_built = self.bspline_processor.is_fitted()
 
-        self.window.optimizer_panel.fit_bspline_button.setEnabled(enabled and is_file_loaded)
+        opt.fit_bspline_button.setEnabled(enabled and is_file_loaded)
 
         # Knot control buttons
-        self.window.optimizer_panel.upper_insert_btn.setEnabled(enabled and is_model_built)
-        self.window.optimizer_panel.lower_insert_btn.setEnabled(enabled and is_model_built)
+        opt.upper_insert_btn.setEnabled(enabled and is_model_built)
+        opt.lower_insert_btn.setEnabled(enabled and is_model_built)
+
+        # Fit-driving optimizer controls are read-only while a fit is running
+        opt.initial_cp_spin.setEnabled(enabled)
+        opt.bspline_degree_spin.setEnabled(enabled)
+        opt.smoothness_penalty_spin.setEnabled(enabled)
+        opt.g2_checkbox.setEnabled(enabled)
+        opt.g3_checkbox.setEnabled(enabled and opt.g2_checkbox.isChecked())
+        opt.enforce_te_tangency_checkbox.setEnabled(enabled)
+        opt.te_vector_points_combo.setEnabled(enabled)
+
+        # Comb controls are read-only while a fit is running
+        self.window.comb_panel.comb_scale_slider.setEnabled(enabled and is_model_built)
+        self.window.comb_panel.comb_density_slider.setEnabled(enabled and is_model_built)
 
     def _update_fit_button_text(self) -> None:
         """Update the fit button text based on whether CP counts differ from defaults."""
@@ -438,34 +454,9 @@ class BSplineController:
             scale_factor=comb_scale,
         )
         
-        # Create plot data with B-spline information
-        plot_data = {
-            'upper_data': self.processor.upper_data,
-            'lower_data': self.processor.lower_data,
-            'bspline_upper_curve': self.bspline_processor.upper_curve,
-            'bspline_lower_curve': self.bspline_processor.lower_curve,
-            'bspline_upper_control_points': self.bspline_processor.upper_control_points,
-            'bspline_lower_control_points': self.bspline_processor.lower_control_points,
-            'comb_bspline': comb_bspline,
-            'upper_te_tangent_vector': self.processor.upper_te_tangent_vector,
-            'lower_te_tangent_vector': self.processor.lower_te_tangent_vector,
-            'bspline_is_blunt': not self.bspline_processor.is_sharp_te,
-        }
-        
-        # Add B-spline max error information
-        if hasattr(self.bspline_processor, 'last_upper_max_error'):
-            plot_data['bspline_upper_max_error'] = self.bspline_processor.last_upper_max_error
-            plot_data['bspline_upper_max_error_idx'] = self.bspline_processor.last_upper_max_error_idx
-            plot_data['bspline_lower_max_error'] = self.bspline_processor.last_lower_max_error
-            plot_data['bspline_lower_max_error_idx'] = self.bspline_processor.last_lower_max_error_idx
-        
-        # Add control points count for display in error text
-        plot_data['bspline_num_cp_upper'] = self.bspline_processor.num_cp_upper
-        plot_data['bspline_num_cp_lower'] = self.bspline_processor.num_cp_lower
-        
-
-        
-        # Emit plot update signal
-        self.processor.plot_update_requested.emit(plot_data)
+        self.processor.emit_plot_update(
+            bspline_processor=self.bspline_processor,
+            comb_bspline=comb_bspline,
+        )
 
 

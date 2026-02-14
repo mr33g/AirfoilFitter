@@ -24,6 +24,15 @@ class UIStateController:
         self._default_te_vector_points = config.DEFAULT_TE_VECTOR_POINTS
         # Store initial thickness from input data
         self._initial_thickness_mm: float = 0.0
+
+    def _get_bspline_processor(self):
+        """Return the canonical B-spline processor instance."""
+        bspline_controller = getattr(self.window, "bspline_controller", None)
+        if bspline_controller is not None:
+            bspline_proc = getattr(bspline_controller, "bspline_processor", None)
+            if bspline_proc is not None:
+                return bspline_proc
+        return getattr(self.window, "bspline_processor", None)
     
     def update_comb_labels(self) -> None:
         """Update comb scale and density labels."""
@@ -44,13 +53,7 @@ class UIStateController:
         is_file_loaded = self.processor.upper_data is not None
         
         # Check for B-spline model
-        # Prefer the controller's processor reference to avoid mismatches
-        bspline_proc = None
-        bspline_controller = getattr(self.window, "bspline_controller", None)
-        if bspline_controller is not None and getattr(bspline_controller, "bspline_processor", None) is not None:
-            bspline_proc = bspline_controller.bspline_processor
-        else:
-            bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         is_bspline_model_built = False
         if bspline_proc is not None:
             try:
@@ -66,10 +69,7 @@ class UIStateController:
         # (i.e., if backup data exists, meaning thickening was applied)
         is_bspline_thickened = False
         if is_bspline_model_built and bspline_proc is not None:
-            # Check if thickening was applied via UI (backup exists)
-            has_backup = (bspline_proc._backup_upper_control_points is not None and 
-                         bspline_proc._backup_lower_control_points is not None)
-            is_bspline_thickened = has_backup
+            is_bspline_thickened = bool(bspline_proc.has_ui_applied_te_thickening())
         
         # Overall thickening state
         is_thickened = is_bspline_thickened
@@ -136,7 +136,7 @@ class UIStateController:
         density = comb.comb_density_slider.value()
 
         # Check for B-spline model
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         is_bspline_model_present = False
         if bspline_proc is not None:
             try:
@@ -146,7 +146,7 @@ class UIStateController:
         
         if is_bspline_model_present:
             # Update B-spline comb if B-spline model is present
-            bspline_proc = getattr(self.window, "bspline_processor", None)
+            bspline_proc = self._get_bspline_processor()
             if bspline_proc is not None and bspline_proc.is_fitted():
                 # Trigger B-spline plot update with new comb parameters
                 self.window.bspline_controller._update_plot_with_bsplines()
@@ -160,7 +160,7 @@ class UIStateController:
             )
             
             # Check if we have B-spline model to thicken
-            bspline_proc = getattr(self.window, "bspline_processor", None)
+            bspline_proc = self._get_bspline_processor()
             is_bspline_model_built = False
             if bspline_proc is not None:
                 try:
@@ -175,10 +175,7 @@ class UIStateController:
             # Determine if UI-applied thickening exists (presence of backups)
             has_ui_applied_thickening = False
             if bspline_proc is not None:
-                has_ui_applied_thickening = (
-                    getattr(bspline_proc, "_backup_upper_control_points", None) is not None and
-                    getattr(bspline_proc, "_backup_lower_control_points", None) is not None
-                )
+                has_ui_applied_thickening = bool(bspline_proc.has_ui_applied_te_thickening())
             
             # Handle B-spline thickening based on UI-applied state
             bspline_controller = getattr(self.window, "bspline_controller", None)
@@ -207,18 +204,9 @@ class UIStateController:
         # Calculate and store initial thickness from input data
         self._calculate_initial_thickness()
         
-        bspline_proc = getattr(self.window, "bspline_processor", None)
+        bspline_proc = self._get_bspline_processor()
         if bspline_proc is not None:
-            bspline_proc.fitted = False
-            bspline_proc.upper_control_points = None
-            bspline_proc.lower_control_points = None
-            bspline_proc.upper_curve = None
-            bspline_proc.lower_curve = None
-            bspline_proc.is_sharp_te = True
-            bspline_proc._backup_upper_control_points = None
-            bspline_proc._backup_lower_control_points = None
-            bspline_proc._backup_upper_knot_vector = None
-            bspline_proc._backup_lower_knot_vector = None
+            bspline_proc.reset_model_state()
 
 
         opt = self.window.optimizer_panel

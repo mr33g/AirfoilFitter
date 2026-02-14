@@ -19,17 +19,9 @@ class OptimizationController:
         self.ui_state_controller = ui_state_controller
     
     def recalculate_te_vectors(self) -> None:
-        """Handle recalculate TE vectors action."""
-        opt = self.window.optimizer_panel
-        try:
-            te_vector_points = int(opt.te_vector_points_combo.currentText())
-        except ValueError:
-            self.processor.log_message.emit("Error: Invalid input values. Please check all numeric inputs.")
+        """Delegate to the canonical TE-vector flow in BSplineController."""
+        bspline_controller = getattr(self.window, "bspline_controller", None)
+        if bspline_controller is not None:
+            bspline_controller.handle_te_vector_points_changed()
             return
-
-        self.processor.recalculate_te_vectors_and_update_plot(te_vector_points)
-        self.processor.log_message.emit(f"Recalculating with TE vector points set to: {te_vector_points}")
-        
-        # Update UI state after TE vector recalculation
-        if self.ui_state_controller:
-            self.ui_state_controller.update_button_states() 
+        self.processor.log_message.emit("B-spline controller not initialized; cannot recalculate TE vectors.")
