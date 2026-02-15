@@ -245,7 +245,12 @@ def load_airfoil_data(filename, logger_func=print):
         ValueError: If the file is empty or malformed.
     """
     with open(filename, 'r') as f:
-        lines = [line.strip() for line in f.readlines() if line.strip()] # Read lines, strip whitespace, remove empty lines
+        # Ignore blank lines and comment lines starting with '#'.
+        lines = [
+            line.strip()
+            for line in f.readlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
 
     if not lines:
         raise ValueError(f"Airfoil data file '{filename}' is empty or contains no valid data.")

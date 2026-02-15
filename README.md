@@ -74,7 +74,7 @@ python run_gui.py
    Enter a thickness value in millimeters and click *Apply* to add a blunt trailing edge. The offset is applied using a C² quintic blend that preserves leading edge geometry.
 
 6. **Export**  
-   - *Export DXF*: Saves upper and lower B-spline curves as NURBS entities scaled to the specified chord length.
+   - *Export DXF*: Exports upper and lower curves scaled to the specified chord length. Enable the *As Bezier* checkbox to export piecewise Bezier segments instead of NURBS.
    - *Export BSP*: Saves control points and knot vectors in AirfoilEditor-compatible `.bsp` format.
    - *Export DAT*: Saves a resampled coordinate file in Selig format.
 

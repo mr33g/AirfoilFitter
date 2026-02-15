@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QPushButton,
+    QCheckBox,
     QLabel,
     QWidget,
     QSizePolicy,
@@ -29,6 +30,10 @@ class FileControlPanel(QGroupBox):
         
         self.export_dxf_button = QPushButton("Export DXF")
         self.export_dxf_button.setMinimumWidth(120)  # Give button a minimum width
+        self.export_dxf_as_bezier_checkbox = QCheckBox("As Bezier")
+        self.export_dxf_as_bezier_checkbox.setToolTip(
+            "When enabled, DXF export decomposes each B-spline into piecewise Bezier segments."
+        )
 
         self.export_bsp_button = QPushButton("Export BSP")
         self.export_bsp_button.setMinimumWidth(120)  # Give button a minimum width
@@ -52,6 +57,9 @@ class FileControlPanel(QGroupBox):
             self.export_dat_button.setVisible(False)
             self.points_per_surface_label.setVisible(False)
             self.points_per_surface_input.setVisible(False)
+
+        if not config.ENABLE_DXF_BEZIER_EXPORT:
+            self.export_dxf_as_bezier_checkbox.setVisible(False)
         
         # --- Layout ------------------------------------------------------
         file_layout = QHBoxLayout()
@@ -62,6 +70,7 @@ class FileControlPanel(QGroupBox):
         export_layout = QHBoxLayout()
         export_layout.setSpacing(10)
         export_layout.addWidget(self.export_dxf_button)
+        export_layout.addWidget(self.export_dxf_as_bezier_checkbox)
         export_layout.addWidget(self.export_bsp_button)
 
         export_layout.addStretch(1)

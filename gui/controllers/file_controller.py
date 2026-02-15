@@ -14,7 +14,11 @@ from scipy import interpolate
 
 from core.airfoil_processor import AirfoilProcessor
 from core import config
-from utils.dxf_exporter import export_bspline_to_dxf
+from utils.dxf_exporter import (
+    DXF_EXPORT_MODE_BEZIER,
+    DXF_EXPORT_MODE_NURBS,
+    export_bspline_to_dxf,
+)
 from utils.bsp_exporter import export_bspline_to_bsp
 from utils.bsp_importer import load_bspline_from_bsp
 from utils.data_loader import export_airfoil_to_selig_format, load_airfoil_data
@@ -289,10 +293,18 @@ class FileController:
             )
             return
 
+        export_mode = DXF_EXPORT_MODE_NURBS
+        file_panel = getattr(self.window, "file_panel", None)
+        if file_panel is not None:
+            as_bezier_checkbox = getattr(file_panel, "export_dxf_as_bezier_checkbox", None)
+            if as_bezier_checkbox is not None and as_bezier_checkbox.isChecked():
+                export_mode = DXF_EXPORT_MODE_BEZIER
+
         dxf_doc = export_bspline_to_dxf(
             bspline_proc,
             chord_length_mm,
             self.processor.log_message.emit,
+            export_mode=export_mode,
         )
 
         if not dxf_doc:
