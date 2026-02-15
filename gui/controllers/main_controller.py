@@ -53,7 +53,7 @@ class MainController(QObject):
         self.ui_state_controller.update_comb_labels()
         self.ui_state_controller.update_button_states()
 
-        self.processor.log_message.emit("Application started. Load an airfoil .dat file to begin.")
+        self.processor.log_message.emit("Application started. Load an airfoil .dat or .bsp file to begin.")
 
     def _connect_signals(self) -> None:
         """Connect all GUI signals to their respective controller methods."""

@@ -35,6 +35,11 @@ class BSplineProcessor:
         self.smoothing_weight: float = config.DEFAULT_SMOOTHNESS_PENALTY  # Weight for control point smoothing penalty
         self.last_error_message: str | None = None
         self.last_optimizer_info: dict | None = None
+        self.last_upper_max_error: float | None = None
+        self.last_upper_max_error_idx: int | None = None
+        self.last_lower_max_error: float | None = None
+        self.last_lower_max_error_idx: int | None = None
+        self.error_reference_available: bool = False
         
         self.upper_original_data: np.ndarray | None = None
         self.lower_original_data: np.ndarray | None = None
@@ -92,6 +97,7 @@ class BSplineProcessor:
             # Store original data for potential later refinement (e.g., knot insertion)
             self.upper_original_data = upper_data_corrected.copy()
             self.lower_original_data = lower_data_corrected.copy()
+            self.error_reference_available = True
             
             # For sharp trailing edge, ensure they end at the same point
             if self.is_sharp_te:
@@ -609,6 +615,11 @@ class BSplineProcessor:
         self.upper_curve = None
         self.lower_curve = None
         self.is_sharp_te = True
+        self.last_upper_max_error = None
+        self.last_upper_max_error_idx = None
+        self.last_lower_max_error = None
+        self.last_lower_max_error_idx = None
+        self.error_reference_available = False
         self._backup_upper_control_points = None
         self._backup_lower_control_points = None
         self._backup_upper_knot_vector = None

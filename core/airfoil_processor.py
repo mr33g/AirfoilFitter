@@ -150,7 +150,7 @@ class AirfoilProcessor(QObject):
             }
         )
 
-        if hasattr(bspline_processor, 'last_upper_max_error'):
+        if bool(getattr(bspline_processor, "error_reference_available", False)):
             plot_data['bspline_upper_max_error'] = bspline_processor.last_upper_max_error
             plot_data['bspline_upper_max_error_idx'] = bspline_processor.last_upper_max_error_idx
             plot_data['bspline_lower_max_error'] = bspline_processor.last_lower_max_error
