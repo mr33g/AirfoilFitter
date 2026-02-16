@@ -33,6 +33,7 @@ class BSplineProcessor:
         self.enforce_g3: bool = False
         self.g2_weight: float = 100.0  # Weight for G2 constraint in optimization
         self.smoothing_weight: float = config.DEFAULT_SMOOTHNESS_PENALTY  # Weight for control point smoothing penalty
+        self.min_cp_neighbor_distance: float = float(getattr(config, "MIN_CP_NEIGHBOR_DISTANCE", 0.0))
         self.last_error_message: str | None = None
         self.last_optimizer_info: dict | None = None
         self.last_upper_max_error: float | None = None
@@ -755,34 +756,132 @@ class BSplineProcessor:
             return True
 
         sorted_new_knots = sorted(new_knots)
+        # Transactional apply: update fitter state only after all checks pass.
+        new_upper_cps = self.upper_control_points
+        new_upper_knots = self.upper_knot_vector
+        new_lower_cps = self.lower_control_points
+        new_lower_knots = self.lower_knot_vector
+        new_num_cp_upper = int(self.num_cp_upper)
+        new_num_cp_lower = int(self.num_cp_lower)
 
         if surface is None or surface == 'upper':
             if self.upper_control_points is None or self.upper_knot_vector is None:
+                self.last_error_message = "Knot insertion failed: upper curve state is missing."
                 return False
-            current_upper_cps = self.upper_control_points.copy()
-            current_upper_knots = self.upper_knot_vector.copy()
+            new_upper_cps = self.upper_control_points.copy()
+            new_upper_knots = self.upper_knot_vector.copy()
             for knot in sorted_new_knots:
-                current_upper_cps, current_upper_knots = bspline_helper.insert_knot(
-                    current_upper_cps, current_upper_knots, self.degree_upper, knot
+                insert_result = self._insert_knot_with_spacing_fallback(
+                    new_upper_cps, new_upper_knots, self.degree_upper, float(knot), "upper"
                 )
-            self.upper_control_points = current_upper_cps
-            self.upper_knot_vector = current_upper_knots
-            self.num_cp_upper = len(self.upper_control_points)
+                if insert_result is None:
+                    return False
+                new_upper_cps, new_upper_knots = insert_result
+            new_num_cp_upper = len(new_upper_cps)
 
         if surface is None or surface == 'lower':
             if self.lower_control_points is None or self.lower_knot_vector is None:
+                self.last_error_message = "Knot insertion failed: lower curve state is missing."
                 return False
-            current_lower_cps = self.lower_control_points.copy()
-            current_lower_knots = self.lower_knot_vector.copy()
+            new_lower_cps = self.lower_control_points.copy()
+            new_lower_knots = self.lower_knot_vector.copy()
             for knot in sorted_new_knots:
-                current_lower_cps, current_lower_knots = bspline_helper.insert_knot(
-                    current_lower_cps, current_lower_knots, self.degree_lower, knot
+                insert_result = self._insert_knot_with_spacing_fallback(
+                    new_lower_cps, new_lower_knots, self.degree_lower, float(knot), "lower"
                 )
-            self.lower_control_points = current_lower_cps
-            self.lower_knot_vector = current_lower_knots
-            self.num_cp_lower = len(self.lower_control_points)
+                if insert_result is None:
+                    return False
+                new_lower_cps, new_lower_knots = insert_result
+            new_num_cp_lower = len(new_lower_cps)
 
+        self.upper_control_points = new_upper_cps
+        self.upper_knot_vector = new_upper_knots
+        self.lower_control_points = new_lower_cps
+        self.lower_knot_vector = new_lower_knots
+        self.num_cp_upper = new_num_cp_upper
+        self.num_cp_lower = new_num_cp_lower
         return True
+
+    def _insert_knot_with_spacing_fallback(
+        self,
+        control_points: np.ndarray,
+        knot_vector: np.ndarray,
+        degree: int,
+        requested_knot: float,
+        surface_name: str,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Insert at requested knot; on spacing violation retry at standard fallback span midpoint."""
+        trial_cps, trial_knots = bspline_helper.insert_knot(
+            control_points, knot_vector, degree, requested_knot
+        )
+        if not self._cp_spacing_violates_minimum(trial_cps):
+            return trial_cps, trial_knots
+
+        fallback_knot = self._largest_span_midpoint_knot(knot_vector, degree, exclude=requested_knot)
+        if fallback_knot is None:
+            self.last_error_message = (
+                f"Knot insertion rejected: {surface_name} control points became too tightly clustered."
+            )
+            return None
+
+        fallback_cps, fallback_knots = bspline_helper.insert_knot(
+            control_points, knot_vector, degree, fallback_knot
+        )
+        if self._cp_spacing_violates_minimum(fallback_cps):
+            self.last_error_message = (
+                f"Knot insertion rejected: {surface_name} control points became too tightly clustered."
+            )
+            return None
+
+        return fallback_cps, fallback_knots
+
+    def _largest_span_midpoint_knot(
+        self,
+        knot_vector: np.ndarray,
+        degree: int,
+        *,
+        exclude: float | None = None,
+    ) -> float | None:
+        """Return midpoint of the largest valid knot span, optionally excluding one knot value."""
+        kv = np.asarray(knot_vector, dtype=float)
+        if kv.size < 2:
+            return None
+
+        # Valid parametric spans for a clamped B-spline are in [p, n-p-2] index space.
+        start = max(int(degree), 0)
+        stop = max(start + 1, int(len(kv) - degree - 1))
+        spans: list[tuple[float, float]] = []
+        for i in range(start, stop):
+            left = float(kv[i])
+            right = float(kv[i + 1])
+            width = right - left
+            if width <= 1e-12:
+                continue
+            mid = 0.5 * (left + right)
+            spans.append((width, mid))
+
+        if not spans:
+            return None
+
+        spans.sort(key=lambda s: s[0], reverse=True)
+        for _, mid in spans:
+            if exclude is not None and abs(mid - float(exclude)) <= 1e-12:
+                continue
+            return float(mid)
+        return None
+
+    def _cp_spacing_violates_minimum(self, control_points: np.ndarray) -> bool:
+        """Return True if neighboring control points are closer than configured minimum."""
+        min_dist = float(getattr(self, "min_cp_neighbor_distance", 0.0))
+        if min_dist <= 0.0:
+            return False
+        if control_points is None or len(control_points) < 2:
+            return False
+        seg = np.diff(np.asarray(control_points, dtype=float), axis=0)
+        if len(seg) == 0:
+            return False
+        d = np.linalg.norm(seg, axis=1)
+        return bool(np.min(d) < min_dist)
 
     def _refit_after_knot_insertion(self) -> bool:
         """Re-fit using current knot vectors and control-point counts."""
