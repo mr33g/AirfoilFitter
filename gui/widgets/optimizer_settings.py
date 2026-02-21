@@ -83,7 +83,7 @@ class OptimizerSettingsWidget(QGroupBox):
         # B-spline degree setting
         self.bspline_degree_label = QLabel("Degree:")
         self.bspline_degree_spin = QSpinBox()
-        self.bspline_degree_spin.setMinimum(4)
+        self.bspline_degree_spin.setMinimum(3)
         self.bspline_degree_spin.setMaximum(12)
         self.bspline_degree_spin.setValue(config.DEFAULT_BSPLINE_DEGREE)
         self.bspline_degree_spin.setToolTip(
