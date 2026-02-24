@@ -23,6 +23,19 @@ class BSplineController:
         # Worker thread for long-running operations
         self._current_worker: BSplineWorker | None = None
 
+    def _selected_fit_objective(self) -> str:
+        """Return normalized objective selection from UI."""
+        objective_metric = str(self.window.optimizer_panel.fit_objective_combo.currentText()).strip().lower()
+        if objective_metric not in {"msr", "euclidean"}:
+            objective_metric = "msr"
+        return objective_metric
+
+    def _apply_selected_fit_objective(self) -> str:
+        """Apply the UI-selected objective to runtime config and return it."""
+        objective_metric = self._selected_fit_objective()
+        config.FIT_ERROR_OBJECTIVE = objective_metric
+        return objective_metric
+
     def refit_if_fitted(self) -> None:
         """Re-fit B-spline if one is already fitted. Used for parameter changes.
         
@@ -107,6 +120,9 @@ class BSplineController:
             # Get smoothness penalty from GUI
             smoothing_weight = float(self.window.optimizer_panel.smoothness_penalty_spin.value())
             self.bspline_processor.smoothing_weight = smoothing_weight
+
+            # Get fit objective from GUI and apply globally for the optimizer path.
+            objective_metric = self._apply_selected_fit_objective()
             
             # Determine control point counts
             # If we're coming from an automatic refinement (knot insertion), we might have asymmetric counts
@@ -130,6 +146,7 @@ class BSplineController:
                 'enforce_g2': enforce_g2,
                 'enforce_g3': enforce_g3,
                 'enforce_te_tangency': enforce_te_tangency,
+                'fit_error_objective': objective_metric,
             }
             
             # Create and configure worker
@@ -170,17 +187,40 @@ class BSplineController:
         
         if success:
             params = getattr(self, '_pending_fit_params', {})
-            enforce_g2 = params.get('enforce_g2', False)
-            enforce_g3 = params.get('enforce_g3', False)
-            enforce_te_tangency = params.get('enforce_te_tangency', True)
+            requested_g2 = params.get('enforce_g2', False)
+            requested_g3 = params.get('enforce_g3', False)
+            requested_te_tangency = params.get('enforce_te_tangency', True)
+            actual_g2 = bool(self.bspline_processor.enforce_g2)
+            actual_g3 = bool(self.bspline_processor.enforce_g3)
             num_cp_upper = params.get('num_cp_upper', 10)
             num_cp_lower = params.get('num_cp_lower', 10)
 
-            # Log continuity settings used
-            g2_status = "enabled" if enforce_g2 else "disabled"
-            g3_status = "enabled" if enforce_g3 else "disabled"
-            te_tangency_status = "enabled" if enforce_te_tangency else "disabled"
-            self.window.status_log.append(f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}")
+            # Log requested vs actual continuity settings.
+            g2_status = "enabled" if actual_g2 else "disabled"
+            g3_status = "enabled" if actual_g3 else "disabled"
+            te_tangency_status = "enabled" if requested_te_tangency else "disabled"
+            self.window.status_log.append(
+                f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}"
+            )
+            if requested_g2 and not actual_g2:
+                self.window.status_log.append(
+                    "Requested G2 fit was not accepted; fit fell back to G1-independent mode."
+                )
+            if requested_g3 and not actual_g3:
+                self.window.status_log.append(
+                    "Requested G3 continuity was not active in the final fit."
+                )
+            opt_info = getattr(self.bspline_processor, "last_optimizer_info", None)
+            if isinstance(opt_info, dict):
+                mode = opt_info.get("mode")
+                metric = opt_info.get("fit_error_metric")
+                samples = opt_info.get("fit_error_samples")
+                if mode is not None:
+                    self.window.status_log.append(f"Fit mode used: {mode}.")
+                if metric is not None and samples is not None:
+                    self.window.status_log.append(
+                        f"Fit objective metric: {metric} (samples/surface: {samples})."
+                    )
             
             # Calculate and display errors for each surface
             upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
@@ -250,9 +290,16 @@ class BSplineController:
     
     def _set_buttons_enabled(self, enabled: bool) -> None:
         """Enable or disable B-spline operation buttons."""
+        fp = self.window.file_panel
         opt = self.window.optimizer_panel
         is_file_loaded = getattr(self.processor, "upper_data", None) is not None
         is_model_built = self.bspline_processor.is_fitted()
+
+        # Disable file load/export controls while worker operations are running.
+        fp.load_button.setEnabled(enabled)
+        fp.export_dxf_button.setEnabled(enabled and is_model_built)
+        fp.export_bsp_button.setEnabled(enabled and is_model_built and config.ENABLE_BSP_EXPORT)
+        fp.export_dat_button.setEnabled(enabled and is_model_built and config.ENABLE_DAT_EXPORT)
 
         opt.fit_bspline_button.setEnabled(enabled and is_file_loaded)
 
@@ -264,6 +311,7 @@ class BSplineController:
         opt.initial_cp_spin.setEnabled(enabled)
         opt.bspline_degree_spin.setEnabled(enabled)
         opt.smoothness_penalty_spin.setEnabled(enabled)
+        opt.fit_objective_combo.setEnabled(enabled)
         opt.g2_checkbox.setEnabled(enabled)
         opt.g3_checkbox.setEnabled(enabled and opt.g2_checkbox.isChecked())
         opt.enforce_te_tangency_checkbox.setEnabled(enabled)
@@ -393,42 +441,59 @@ class BSplineController:
             self.window.status_log.append("No airfoil data loaded. Cannot determine max deviation.")
             return
 
+        if self._current_worker is not None and self._current_worker.isRunning():
+            self.window.status_log.append("A B-spline operation is already in progress. Please wait.")
+            return
+
         target_surface = surface
         target_data = self.processor.upper_data if target_surface == 'upper' else self.processor.lower_data
-        target_curve = self.bspline_processor.upper_curve if target_surface == 'upper' else self.bspline_processor.lower_curve
 
         # Insert a knot
         try:
-            _, max_err, _, u_at_max = self.calculate_bspline_fitting_error(
-                target_curve,
-                target_data,
-                return_max_error=True,
-            )
+            self.window.status_log.append(f"Inserting knot on {target_surface} surface...")
+            self._current_worker = BSplineWorker(self.bspline_processor, self.window)
+            self._current_worker.setup_insert_knot_operation(target_surface, target_data)
+            self._current_worker.finished.connect(self._on_insert_knot_finished)
+            self._current_worker.error.connect(self._on_worker_error)
+            self._current_worker.progress_message.connect(self._on_worker_progress)
 
-            existing_knots = self.bspline_processor.upper_knot_vector if target_surface == 'upper' else self.bspline_processor.lower_knot_vector
-            new_knot = u_at_max
-            if existing_knots is not None:
-                idx = np.searchsorted(existing_knots, u_at_max)
-                t_left = existing_knots[idx-1]
-                t_right = existing_knots[idx]
-                if t_right - t_left < 1e-4:
-                    span_left = t_left - existing_knots[idx-2] if idx > 1 else 0
-                    span_right = existing_knots[idx+1] - t_right if idx < len(existing_knots)-1 else 0
-                    new_knot = (existing_knots[idx-2] + t_left) / 2 if span_left > span_right else (t_right + existing_knots[idx+1]) / 2
-                else:
-                    new_knot = (t_left + t_right) / 2
-
-            self.window.status_log.append(f"Inserting knot at u={new_knot:.4f} on {target_surface} surface.")
-            
-            success = self.bspline_processor.refine_curve_with_knots([new_knot], surface=target_surface)
-
-            if success:
-                self._on_fit_finished(True, "")
-            else:
-                self.window.status_log.append(f"Failed to insert knot on {target_surface} surface.")
+            self.window.status_log.start_spinner("Inserting knot")
+            self._set_buttons_enabled(False)
+            self._current_worker.start()
 
         except Exception as e:
             self.window.status_log.append(f"Error during knot insertion: {e}")
+
+    def _on_insert_knot_finished(self, success: bool, message: str) -> None:
+        """Handle completion of knot insertion operation."""
+        self.window.status_log.stop_spinner()
+        self._set_buttons_enabled(True)
+        self.window.status_log.append(message)
+
+        if success and self.bspline_processor.upper_curve is not None and self.bspline_processor.lower_curve is not None:
+            upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
+                self.bspline_processor.upper_curve,
+                self.processor.upper_data,
+                return_max_error=True,
+            )
+            lower_sum_sq, lower_max_err, lower_max_err_idx, _ = self.calculate_bspline_fitting_error(
+                self.bspline_processor.lower_curve,
+                self.processor.lower_data,
+                return_max_error=True,
+            )
+            _ = upper_sum_sq, lower_sum_sq
+            self.bspline_processor.last_upper_max_error = upper_max_err
+            self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
+            self.bspline_processor.last_lower_max_error = lower_max_err
+            self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
+            self.window.optimizer_panel.upper_cp_label.setText(f"Upper CPs: {self.bspline_processor.num_cp_upper}")
+            self.window.optimizer_panel.lower_cp_label.setText(f"Lower CPs: {self.bspline_processor.num_cp_lower}")
+            self._update_fit_button_text()
+            self._update_plot_with_bsplines()
+
+        if self._current_worker:
+            self._current_worker.deleteLater()
+            self._current_worker = None
 
     def is_te_thickened(self) -> bool:
         """

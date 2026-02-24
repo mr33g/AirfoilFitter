@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 import numpy as np
+from scipy.spatial import cKDTree
+from core import config
 from core.bspline_processor import BSplineProcessor
 
 
@@ -32,8 +34,8 @@ class BSplineWorker(QThread):
         self.enforce_te_tangency = True
         
         # Parameters for insert knot operation
-        self.knot_u_value = None
         self.target_surface = None
+        self.target_data = None
     
     def setup_fit_operation(
         self,
@@ -61,13 +63,13 @@ class BSplineWorker(QThread):
     
     def setup_insert_knot_operation(
         self,
-        knot_u_value: float,
         target_surface: str,
+        target_data: np.ndarray,
     ):
         """Set up parameters for a knot insertion operation."""
         self.operation_type = 'insert_knot'
-        self.knot_u_value = knot_u_value
         self.target_surface = target_surface
+        self.target_data = target_data.copy()
     
     def run(self) -> None:
         """Execute the operation in the worker thread."""
@@ -111,15 +113,66 @@ class BSplineWorker(QThread):
     
     def _run_insert_knot(self) -> None:
         """Execute knot insertion in the worker thread."""
-        self.progress_message.emit(f"Inserting knot at u={self.knot_u_value:.4f} on {self.target_surface} surface...")
-        
+        if self.target_surface not in {"upper", "lower"}:
+            self.finished.emit(False, "Invalid target surface.")
+            return
+        if self.target_data is None or self.target_data.size == 0:
+            self.finished.emit(False, "No target data available for knot insertion.")
+            return
+
+        target_curve = (
+            self.bspline_processor.upper_curve
+            if self.target_surface == "upper"
+            else self.bspline_processor.lower_curve
+        )
+        existing_knots = (
+            self.bspline_processor.upper_knot_vector
+            if self.target_surface == "upper"
+            else self.bspline_processor.lower_knot_vector
+        )
+        if target_curve is None or existing_knots is None:
+            self.finished.emit(False, "Target curve is unavailable for knot insertion.")
+            return
+
+        num_points_curve = int(max(128, getattr(config, "NUM_POINTS_CURVE_ERROR", 35000)))
+        t_samples = np.linspace(0.0, 1.0, num_points_curve)
+        if len(t_samples) > 0:
+            t_samples[-1] = min(t_samples[-1], 1.0 - 1e-12)
+        sampled_curve_points = target_curve(t_samples)
+        sort_idx = np.argsort(sampled_curve_points[:, 0])
+        sampled_curve_points = sampled_curve_points[sort_idx]
+        t_sorted = t_samples[sort_idx]
+        tree = cKDTree(sampled_curve_points)
+        min_dists, nn_curve_idx = tree.query(self.target_data, k=1)
+        max_error_idx = int(np.argmax(min_dists))
+        nearest_curve_idx = int(nn_curve_idx[max_error_idx])
+        nearest_curve_idx = max(0, min(nearest_curve_idx, len(t_sorted) - 1))
+        u_at_max = float(t_sorted[nearest_curve_idx])
+
+        idx = int(np.searchsorted(existing_knots, u_at_max))
+        idx = max(1, min(idx, len(existing_knots) - 1))
+        t_left = float(existing_knots[idx - 1])
+        t_right = float(existing_knots[idx])
+        if (t_right - t_left) < 1e-4:
+            span_left = float(t_left - existing_knots[idx - 2]) if idx > 1 else 0.0
+            span_right = float(existing_knots[idx + 1] - t_right) if idx < len(existing_knots) - 1 else 0.0
+            if idx > 1 and span_left > span_right:
+                new_knot = float((existing_knots[idx - 2] + t_left) / 2.0)
+            elif idx < len(existing_knots) - 1:
+                new_knot = float((t_right + existing_knots[idx + 1]) / 2.0)
+            else:
+                new_knot = float((t_left + t_right) / 2.0)
+        else:
+            new_knot = float((t_left + t_right) / 2.0)
+
+        self.progress_message.emit(f"Inserting knot at u={new_knot:.4f} on {self.target_surface} surface...")
         success = self.bspline_processor.refine_curve_with_knots(
-            [self.knot_u_value],
+            [new_knot],
             surface=self.target_surface
         )
         
         if success:
-            message = f"Knot inserted successfully at u={self.knot_u_value:.4f} on {self.target_surface} surface"
+            message = f"Knot inserted successfully at u={new_knot:.4f} on {self.target_surface} surface"
             self.finished.emit(True, message)
         else:
             self.finished.emit(False, "Failed to insert knot.")

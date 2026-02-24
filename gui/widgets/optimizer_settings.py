@@ -104,6 +104,20 @@ class OptimizerSettingsWidget(QGroupBox):
             "Higher values (0.5-1.0): Prioritize smoothness, may reduce accuracy."
         )
 
+        # Fit objective setting
+        self.fit_objective_label = QLabel("Objective:")
+        self.fit_objective_combo = QComboBox()
+        self.fit_objective_combo.addItems(["msr", "euclidean"])
+        default_objective = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
+        if default_objective not in {"msr", "euclidean"}:
+            default_objective = "msr"
+        self.fit_objective_combo.setCurrentText(default_objective)
+        self.fit_objective_combo.setToolTip(
+            "Fit objective metric:\n"
+            "- msr: parametric mean-square residual style objective\n"
+            "- euclidean: nearest sampled Euclidean distance objective"
+        )
+
 
         # Action buttons - make them more prominent
         self.fit_bspline_button = QPushButton("Fit B-spline")
@@ -133,14 +147,26 @@ class OptimizerSettingsWidget(QGroupBox):
         lower_row.addWidget(self.lower_insert_btn)
         layout.addLayout(lower_row)
 
-        # Degree and Smoothness in same row
-        params_row = QHBoxLayout()
-        params_row.addWidget(self.bspline_degree_label)
-        params_row.addWidget(self.bspline_degree_spin)
-        params_row.addWidget(self.smoothness_penalty_label)
-        params_row.addWidget(self.smoothness_penalty_spin)
-        params_row.addStretch(1)
-        layout.addLayout(params_row)
+        # Degree row
+        degree_row = QHBoxLayout()
+        degree_row.addWidget(self.bspline_degree_label)
+        degree_row.addWidget(self.bspline_degree_spin)
+        degree_row.addStretch(1)
+        layout.addLayout(degree_row)
+
+        # Smoothness row
+        smoothness_row = QHBoxLayout()
+        smoothness_row.addWidget(self.smoothness_penalty_label)
+        smoothness_row.addWidget(self.smoothness_penalty_spin)
+        smoothness_row.addStretch(1)
+        layout.addLayout(smoothness_row)
+
+        # Objective row
+        objective_row = QHBoxLayout()
+        objective_row.addWidget(self.fit_objective_label)
+        objective_row.addWidget(self.fit_objective_combo)
+        objective_row.addStretch(1)
+        layout.addLayout(objective_row)
 
         # G2, G3 in same row
         continuity_row = QHBoxLayout()

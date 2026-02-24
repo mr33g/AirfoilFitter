@@ -29,6 +29,16 @@ MIN_CP_NEIGHBOR_DISTANCE: float = 1.0e-3
 
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000
+NUM_POINTS_CURVE_OPTIMIZATION_EUCLIDEAN: int = 35000
+EUCLIDEAN_COARSE_SAMPLES: int = 4000
+EUCLIDEAN_MEDIUM_SAMPLES: int = 12000
+EUCLIDEAN_COARSE_EVALS: int = 20
+EUCLIDEAN_MEDIUM_EVALS: int = 70
+EUCLIDEAN_NEAREST_REFRESH_EVERY: int = 4
+EUCLIDEAN_ENABLE_POLISH: bool = True
+EUCLIDEAN_POLISH_MAXITER: int = 120
+EUCLIDEAN_POLISH_FTOL: float = 1e-9
+FIT_ERROR_OBJECTIVE: str = "msr"
 
 # Plot sampling settings
 # Curvature-adaptive sampling improves visual smoothness near the leading edge
@@ -70,6 +80,9 @@ def _candidate_user_config_paths() -> list[Path]:
 
 
 def _coerce_override_value(default_value: object, override_value: object) -> object | None:
+    if isinstance(default_value, str):
+        return override_value if isinstance(override_value, str) else None
+
     if isinstance(default_value, bool):
         return override_value if isinstance(override_value, bool) else None
 

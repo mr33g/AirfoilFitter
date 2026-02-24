@@ -73,6 +73,7 @@ class MainController(QObject):
         # Parameter changes that trigger re-fit (only if already fitted)
         opt.bspline_degree_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
         opt.smoothness_penalty_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
+        opt.fit_objective_combo.currentIndexChanged.connect(self.bspline_controller.refit_if_fitted)
         opt.g2_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         opt.g3_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         opt.enforce_te_tangency_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
