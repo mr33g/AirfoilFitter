@@ -50,6 +50,7 @@ def fit_bspline(
         proc.degree_upper = proc.degree
         proc.degree_lower = proc.degree
         proc.last_insertion_info = None
+        proc.enforce_te_tangency = bool(enforce_te_tangency)
 
         proc.is_sharp_te = not is_thickened
 
@@ -70,6 +71,8 @@ def fit_bspline(
 
         upper_te_dir = bspline_helper.normalize_vector(upper_te_tangent_vector)
         lower_te_dir = bspline_helper.normalize_vector(lower_te_tangent_vector)
+        proc.upper_te_dir = None if upper_te_dir is None else np.asarray(upper_te_dir, dtype=float).copy()
+        proc.lower_te_dir = None if lower_te_dir is None else np.asarray(lower_te_dir, dtype=float).copy()
 
         can_reuse_existing_knots = (
             bool(preserve_existing_knots)
@@ -201,6 +204,10 @@ def fit_with_g2_optimization(
 
     if max_deg > 10:
         max_iter += (max_deg - 10) * 100
+    if enforce_te_tangency:
+        max_iter += 250
+    if bool(proc.enforce_g3):
+        max_iter += 300
 
     def build_problem(
         metric: str,

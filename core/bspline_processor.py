@@ -63,6 +63,9 @@ class BSplineProcessor:
         self.last_lower_max_error_idx: int | None = None
         self.error_reference_available: bool = False
         self.last_insertion_info: dict | None = None
+        self.enforce_te_tangency: bool = False
+        self.upper_te_dir: np.ndarray | None = None
+        self.lower_te_dir: np.ndarray | None = None
         # Tight insertion-mode SLSQP settings chosen from short-set tuning.
         self.insertion_solver_ftol: float = 1e-10
         self.insertion_solver_maxiter_factor: float = 50.0
@@ -207,6 +210,9 @@ class BSplineProcessor:
         self.last_lower_max_error_idx = None
         self.error_reference_available = False
         self.last_insertion_info = None
+        self.enforce_te_tangency = False
+        self.upper_te_dir = None
+        self.lower_te_dir = None
         self._backup_upper_control_points = None
         self._backup_lower_control_points = None
         self._backup_upper_knot_vector = None

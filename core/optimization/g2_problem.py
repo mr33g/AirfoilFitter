@@ -277,20 +277,24 @@ def build_g2_problem(
         def te_tangent_constraint_upper(vars):
             cp_upper, _ = cached_control_points(vars)
             computed_tangent = bspline_helper.compute_tangent_at_trailing_edge(cp_upper, upper_knot_vector, degree_upper)
-            return computed_tangent - upper_te_dir
+            return float(computed_tangent[0] * upper_te_dir[1] - computed_tangent[1] * upper_te_dir[0])
 
         def te_tangent_constraint_lower(vars):
             _, cp_lower = cached_control_points(vars)
             computed_tangent = bspline_helper.compute_tangent_at_trailing_edge(cp_lower, lower_knot_vector, degree_lower)
-            return computed_tangent - lower_te_dir
+            return float(computed_tangent[0] * lower_te_dir[1] - computed_tangent[1] * lower_te_dir[0])
 
         def te_tangent_constraint_upper_jac(vars):
             cp_upper, _ = cached_control_points(vars)
-            return te_tangent_jacobian(cp_upper, upper_knot_vector, degree_upper, True)
+            tangent_jac = te_tangent_jacobian(cp_upper, upper_knot_vector, degree_upper, True)
+            direction_perp = np.asarray([upper_te_dir[1], -upper_te_dir[0]], dtype=float)
+            return direction_perp @ tangent_jac
 
         def te_tangent_constraint_lower_jac(vars):
             _, cp_lower = cached_control_points(vars)
-            return te_tangent_jacobian(cp_lower, lower_knot_vector, degree_lower, False)
+            tangent_jac = te_tangent_jacobian(cp_lower, lower_knot_vector, degree_lower, False)
+            direction_perp = np.asarray([lower_te_dir[1], -lower_te_dir[0]], dtype=float)
+            return direction_perp @ tangent_jac
 
         constraints.extend(
             [

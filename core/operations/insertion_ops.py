@@ -193,14 +193,17 @@ def refit_after_knot_insertion(proc) -> bool:
     baseline_error = pure_fit_total()
 
     cp_counts = (proc.num_cp_upper, proc.num_cp_lower)
+    upper_te_dir = None if getattr(proc, "upper_te_dir", None) is None else np.asarray(proc.upper_te_dir, dtype=float).copy()
+    lower_te_dir = None if getattr(proc, "lower_te_dir", None) is None else np.asarray(proc.lower_te_dir, dtype=float).copy()
+    enforce_te_tangency = bool(getattr(proc, "enforce_te_tangency", False))
     if proc.enforce_g2:
         success = proc._fit_with_g2_optimization(
             proc.upper_original_data,
             proc.lower_original_data,
             cp_counts,
-            upper_te_dir=None,
-            lower_te_dir=None,
-            enforce_te_tangency=False,
+            upper_te_dir=upper_te_dir,
+            lower_te_dir=lower_te_dir,
+            enforce_te_tangency=enforce_te_tangency,
             use_existing_knot_vectors=True,
             warm_start_from_current=True,
         )
@@ -209,9 +212,9 @@ def refit_after_knot_insertion(proc) -> bool:
                 proc.upper_original_data,
                 proc.lower_original_data,
                 cp_counts,
-                upper_te_dir=None,
-                lower_te_dir=None,
-                enforce_te_tangency=False,
+                upper_te_dir=upper_te_dir,
+                lower_te_dir=lower_te_dir,
+                enforce_te_tangency=enforce_te_tangency,
                 use_existing_knot_vectors=True,
             )
     else:
@@ -219,11 +222,11 @@ def refit_after_knot_insertion(proc) -> bool:
             proc.upper_original_data,
             proc.lower_original_data,
             cp_counts,
-                upper_te_dir=None,
-                lower_te_dir=None,
-                enforce_te_tangency=False,
-                use_existing_knot_vectors=True,
-            )
+            upper_te_dir=upper_te_dir,
+            lower_te_dir=lower_te_dir,
+            enforce_te_tangency=enforce_te_tangency,
+            use_existing_knot_vectors=True,
+        )
     final_error = pure_fit_total()
     tolerance = max(1e-12, abs(baseline_error) * 1e-9)
     if np.isfinite(baseline_error) and np.isfinite(final_error) and final_error > baseline_error + tolerance:
