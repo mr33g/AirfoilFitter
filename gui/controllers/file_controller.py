@@ -101,8 +101,8 @@ class FileController:
         upper_knots = np.asarray(bsp_data.upper_knots, dtype=float)
         lower_knots = np.asarray(bsp_data.lower_knots, dtype=float)
 
-        deg_upper = int(len(upper_knots) - len(upper_cp) - 1)
-        deg_lower = int(len(lower_knots) - len(lower_cp) - 1)
+        deg_upper = int(getattr(bsp_data, "upper_degree", len(upper_knots) - len(upper_cp) - 1))
+        deg_lower = int(getattr(bsp_data, "lower_degree", len(lower_knots) - len(lower_cp) - 1))
         if deg_upper < 1 or deg_lower < 1:
             self.processor.log_message.emit(
                 "Error: Invalid BSP degree inferred from knot/control-point counts."
@@ -441,7 +441,7 @@ class FileController:
             return
 
         airfoil_name = getattr(self.processor, "airfoil_name", "airfoil") or "airfoil"
-        default_filename = self._get_default_bsp_filename(f"{airfoil_name}_bspline")
+        default_filename = self._get_default_bsp_filename(airfoil_name)
 
         file_path, _ = QFileDialog.getSaveFileName(
             self.window,
