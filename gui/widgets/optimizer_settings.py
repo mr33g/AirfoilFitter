@@ -107,15 +107,15 @@ class OptimizerSettingsWidget(QGroupBox):
         # Fit objective setting
         self.fit_objective_label = QLabel("Objective:")
         self.fit_objective_combo = QComboBox()
-        self.fit_objective_combo.addItems(["msr", "euclidean"])
+        self.fit_objective_combo.addItems(["msr", "vertical"])
         default_objective = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
-        if default_objective not in {"msr", "euclidean"}:
+        if default_objective not in {"msr", "vertical"}:
             default_objective = "msr"
         self.fit_objective_combo.setCurrentText(default_objective)
         self.fit_objective_combo.setToolTip(
             "Fit objective metric:\n"
-            "- msr: parametric mean-square residual style objective\n"
-            "- euclidean: nearest sampled Euclidean distance objective"
+            "- msr: project term for the standard parametric least-squares residual objective; not RMS\n"
+            "- vertical: solve x(u)=x_data, then compare vertical y deviation"
         )
 
 

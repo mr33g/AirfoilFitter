@@ -6,6 +6,7 @@ from scipy.interpolate import BSpline
 from scipy.spatial import cKDTree
 from core import config
 from core.bspline_processor import BSplineProcessor
+from core.optimization import vertical_error_metrics
 from gui.workers.bspline_worker import BSplineWorker
 
 
@@ -26,7 +27,7 @@ class BSplineController:
     def _selected_fit_objective(self) -> str:
         """Return normalized objective selection from UI."""
         objective_metric = str(self.window.optimizer_panel.fit_objective_combo.currentText()).strip().lower()
-        if objective_metric not in {"msr", "euclidean"}:
+        if objective_metric not in {"msr", "vertical"}:
             objective_metric = "msr"
         return objective_metric
 
@@ -129,12 +130,19 @@ class BSplineController:
             if hasattr(self, "_refitting") and self._refitting:
                 num_cp_upper = self.bspline_processor.num_cp_upper
                 num_cp_lower = self.bspline_processor.num_cp_lower
+                preserve_existing_knots = (
+                    self.bspline_processor.upper_knot_vector is not None
+                    and self.bspline_processor.lower_knot_vector is not None
+                    and int(self.bspline_processor.degree_upper) == gui_degree
+                    and int(self.bspline_processor.degree_lower) == gui_degree
+                )
                 self._refitting = False # Reset flag
             else:
                 # Normal fit from button click: reset to symmetric GUI value and reset exponents
                 num_cp_upper = num_cp_lower = gui_cp
                 self.bspline_processor.param_exponent_upper = 0.5
                 self.bspline_processor.param_exponent_lower = 0.5
+                preserve_existing_knots = False
 
             # Set degree from GUI
             self.bspline_processor.degree = gui_degree
@@ -147,6 +155,7 @@ class BSplineController:
                 'enforce_g3': enforce_g3,
                 'enforce_te_tangency': enforce_te_tangency,
                 'fit_error_objective': objective_metric,
+                'preserve_existing_knots': preserve_existing_knots,
             }
             
             # Create and configure worker
@@ -161,6 +170,7 @@ class BSplineController:
                 enforce_g2,
                 enforce_g3,
                 enforce_te_tangency,
+                preserve_existing_knots,
             )
             
             # Connect worker signals
@@ -218,9 +228,12 @@ class BSplineController:
                 if mode is not None:
                     self.window.status_log.append(f"Fit mode used: {mode}.")
                 if metric is not None and samples is not None:
-                    self.window.status_log.append(
-                        f"Fit objective metric: {metric} (samples/surface: {samples})."
-                    )
+                    if int(samples) > 0:
+                        self.window.status_log.append(
+                            f"Fit objective metric: {metric} (samples/surface: {samples})."
+                        )
+                    else:
+                        self.window.status_log.append(f"Fit objective metric: {metric}.")
             
             # Calculate and display errors for each surface
             upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
@@ -248,6 +261,25 @@ class BSplineController:
             self.window.status_log.append(
                 f"B-spline fit OK (degrees {self.bspline_processor.degree_upper}/{self.bspline_processor.degree_lower}, {span_info}). "
                 f"Upper max error: {upper_max_err:.6e}, Lower max error: {lower_max_err:.6e}"
+            )
+            upper_vertical = self.calculate_bspline_vertical_error(
+                self.bspline_processor.upper_curve,
+                self.processor.upper_data,
+                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_upper", 0.5)),
+            )
+            lower_vertical = self.calculate_bspline_vertical_error(
+                self.bspline_processor.lower_curve,
+                self.processor.lower_data,
+                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
+            )
+            self.window.status_log.append(
+                "Final error comparison: "
+                f"Euclidean max upper/lower = {upper_max_err:.6e} / {lower_max_err:.6e}; "
+                f"Vertical max upper/lower = {upper_vertical['max_error']:.6e} / {lower_vertical['max_error']:.6e}"
+            )
+            self.window.status_log.append(
+                "Vertical RMS upper/lower = "
+                f"{upper_vertical['rms']:.6e} / {lower_vertical['rms']:.6e}"
             )
             
             # Update control point labels in the UI (use actual values from processor)
@@ -369,6 +401,22 @@ class BSplineController:
 
                 return sum_sq, max_error, max_error_idx, u_at_max_error
             return sum_sq
+
+    def calculate_bspline_vertical_error(
+                self,
+                bspline_curve: BSpline,
+                original_data: np.ndarray,
+                *,
+                exponent_guess: float = 0.5,
+            ) -> dict[str, float | int | np.ndarray]:
+            """
+            Calculate vertical fitting error by matching each data x-position to x(u) on the spline.
+            """
+            return vertical_error_metrics(
+                bspline_curve,
+                original_data,
+                exponent_guess=float(exponent_guess),
+            )
     
 
     def apply_te_thickening(self, te_thickness_percent: float) -> bool:
@@ -486,6 +534,25 @@ class BSplineController:
             self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
             self.bspline_processor.last_lower_max_error = lower_max_err
             self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
+            upper_vertical = self.calculate_bspline_vertical_error(
+                self.bspline_processor.upper_curve,
+                self.processor.upper_data,
+                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_upper", 0.5)),
+            )
+            lower_vertical = self.calculate_bspline_vertical_error(
+                self.bspline_processor.lower_curve,
+                self.processor.lower_data,
+                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
+            )
+            self.window.status_log.append(
+                "Post-insert error comparison: "
+                f"Euclidean max upper/lower = {upper_max_err:.6e} / {lower_max_err:.6e}; "
+                f"Vertical max upper/lower = {upper_vertical['max_error']:.6e} / {lower_vertical['max_error']:.6e}"
+            )
+            self.window.status_log.append(
+                "Post-insert vertical RMS upper/lower = "
+                f"{upper_vertical['rms']:.6e} / {lower_vertical['rms']:.6e}"
+            )
             self.window.optimizer_panel.upper_cp_label.setText(f"Upper CPs: {self.bspline_processor.num_cp_upper}")
             self.window.optimizer_panel.lower_cp_label.setText(f"Lower CPs: {self.bspline_processor.num_cp_lower}")
             self._update_fit_button_text()

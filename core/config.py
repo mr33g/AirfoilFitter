@@ -12,12 +12,12 @@ import sys
 from pathlib import Path
 
 # Debugging & Logging
-DEBUG_WORKER_LOGGING: bool = False
+DEBUG_WORKER_LOGGING: bool = True
 
 # B-spline settings
 DEFAULT_BSPLINE_DEGREE: int = 4  # Degree of B-spline curves (3-7 recommended for airfoils)
 DEFAULT_BSPLINE_CP: int = 9   # Initial number of control points per surface (must be >= degree + 1)
-DEFAULT_SMOOTHNESS_PENALTY: float = 0  # Weight for control point smoothing penalty (higher = smoother, lower = more accurate)
+DEFAULT_SMOOTHNESS_PENALTY: float = 0.0  # Weight for control point smoothing penalty (higher = smoother, lower = more accurate)
 
 # ---- Manufacturing / Export defaults -------------------------------------
 DEFAULT_CHORD_LENGTH_MM: float = 200.0
@@ -29,16 +29,8 @@ MIN_CP_NEIGHBOR_DISTANCE: float = 1.0e-3
 
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000
-NUM_POINTS_CURVE_OPTIMIZATION_EUCLIDEAN: int = 35000
-EUCLIDEAN_COARSE_SAMPLES: int = 4000
-EUCLIDEAN_MEDIUM_SAMPLES: int = 12000
-EUCLIDEAN_COARSE_EVALS: int = 20
-EUCLIDEAN_MEDIUM_EVALS: int = 70
-EUCLIDEAN_NEAREST_REFRESH_EVERY: int = 4
-EUCLIDEAN_ENABLE_POLISH: bool = True
-EUCLIDEAN_POLISH_MAXITER: int = 120
-EUCLIDEAN_POLISH_FTOL: float = 1e-9
 FIT_ERROR_OBJECTIVE: str = "msr"
+KNOT_INSERTION_STRATEGY: str = "midspan"  # "adaptive" or "midspan"
 
 # Plot sampling settings
 # Curvature-adaptive sampling improves visual smoothness near the leading edge

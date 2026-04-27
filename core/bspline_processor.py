@@ -62,6 +62,7 @@ class BSplineProcessor:
         self.last_lower_max_error: float | None = None
         self.last_lower_max_error_idx: int | None = None
         self.error_reference_available: bool = False
+        self.last_insertion_info: dict | None = None
         # Tight insertion-mode SLSQP settings chosen from short-set tuning.
         self.insertion_solver_ftol: float = 1e-10
         self.insertion_solver_maxiter_factor: float = 50.0
@@ -87,6 +88,7 @@ class BSplineProcessor:
         enforce_g2: bool = False,
         enforce_g3: bool = False,
         enforce_te_tangency: bool = True,
+        preserve_existing_knots: bool = False,
     ) -> bool:
         return fit_bspline_op(
             self,
@@ -99,6 +101,7 @@ class BSplineProcessor:
             enforce_g2=enforce_g2,
             enforce_g3=enforce_g3,
             enforce_te_tangency=enforce_te_tangency,
+            preserve_existing_knots=preserve_existing_knots,
         )
 
     def _fit_with_g2_optimization(
@@ -203,6 +206,7 @@ class BSplineProcessor:
         self.last_lower_max_error = None
         self.last_lower_max_error_idx = None
         self.error_reference_available = False
+        self.last_insertion_info = None
         self._backup_upper_control_points = None
         self._backup_lower_control_points = None
         self._backup_upper_knot_vector = None

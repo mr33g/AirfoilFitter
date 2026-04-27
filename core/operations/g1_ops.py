@@ -5,34 +5,15 @@ from scipy import optimize
 
 from core import config
 from core.optimization.control_point_mapping import smoothing_weights
+from core.optimization.fit_metrics import vertical_distance_and_grad
 from utils import bspline_helper
 
 
 def _resolve_pure_fit_error_metric() -> str:
-    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "euclidean")).strip().lower()
-    if metric == "msr":
-        return "msr"
-    return "euclidean"
-
-
-def _nearest_sampled_distance_and_grad(
-    data_points: np.ndarray,
-    sampled_curve: np.ndarray,
-    sampled_basis: np.ndarray,
-) -> tuple[float, np.ndarray]:
-    if data_points.size == 0 or sampled_curve.size == 0:
-        return 0.0, np.zeros((sampled_basis.shape[1], 2), dtype=float)
-
-    diff = data_points[:, np.newaxis, :] - sampled_curve[np.newaxis, :, :]
-    dist_sq = np.sum(diff * diff, axis=2)
-    nearest_idx = np.argmin(dist_sq, axis=1)
-    nearest_curve_points = sampled_curve[nearest_idx]
-    residual = nearest_curve_points - data_points
-
-    error = float(np.sum(np.einsum("ij,ij->i", residual, residual)))
-    nearest_basis = sampled_basis[nearest_idx]
-    grad_cp = 2.0 * (nearest_basis.T @ residual)
-    return error, grad_cp
+    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
+    if metric in {"msr", "vertical"}:
+        return metric
+    return "msr"
 
 
 def _pack_control_points(cp: np.ndarray) -> np.ndarray:
@@ -228,7 +209,6 @@ def fit_g1_independent(
         te_tangent_vector=lower_te_dir if enforce_te_tangency else None,
         te_point=te_point_lower,
     )
-    num_samples = int(max(128, getattr(config, "NUM_POINTS_CURVE_OPTIMIZATION_EUCLIDEAN", 1500)))
     pure_metric = _resolve_pure_fit_error_metric()
     proc.last_optimizer_info = {
         "success": True,
@@ -238,7 +218,7 @@ def fit_g1_independent(
         "message": (
             "G1 independent fit solved with MSR objective."
             if pure_metric == "msr"
-            else "G1 independent fit solved with Euclidean objective."
+            else "G1 independent fit solved with vertical objective."
         ),
         "iterations": -1,
         "objective": float("nan"),
@@ -247,7 +227,7 @@ def fit_g1_independent(
         "solver_maxiter": -1,
         "insertion_mode": bool(use_existing_knot_vectors),
         "fit_error_metric": pure_metric,
-        "fit_error_samples": int(num_samples),
+        "fit_error_samples": -1,
         "mode": "g1_independent",
     }
 
@@ -261,7 +241,7 @@ def fit_single_surface_g1(
     te_tangent_vector: np.ndarray | None = None,
     te_point: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Fit single surface with G1/TE constraints and Euclidean distance objective."""
+    """Fit single surface with G1/TE constraints and the selected fit objective."""
     knot_vector = proc.upper_knot_vector if is_upper else proc.lower_knot_vector
     degree = proc.degree_upper if is_upper else proc.degree_lower
     if knot_vector is None:
@@ -277,29 +257,45 @@ def fit_single_surface_g1(
     )
     x0 = np.asarray(linear_guess, dtype=float)
 
-    num_samples = int(max(128, getattr(config, "NUM_POINTS_CURVE_OPTIMIZATION_EUCLIDEAN", 1500)))
-    sample_u = np.linspace(
-        float(knot_vector[degree]),
-        float(knot_vector[-(degree + 1)]),
-        num_samples,
-    )
-    sampled_basis = bspline_helper.build_basis_matrix(sample_u, knot_vector, degree)
     smooth_w = smoothing_weights(num_control_points) * (float(proc.smoothing_weight) ** 2)
+    vertical_eval_state: dict[str, np.ndarray | float | None] = {
+        "x": None,
+        "error": None,
+        "grad": None,
+        "u": None,
+    }
 
-    def objective_euclidean(vars_flat: np.ndarray) -> float:
+    def ensure_vertical_eval(vars_flat: np.ndarray, cp: np.ndarray) -> None:
+        cached_x = vertical_eval_state["x"]
+        x = np.asarray(vars_flat, dtype=float)
+        if cached_x is not None and np.array_equal(np.asarray(cached_x, dtype=float), x):
+            return
+        error, grad_cp, solved_u, _ = vertical_distance_and_grad(
+            surface_data,
+            cp,
+            knot_vector,
+            degree,
+            initial_u=np.asarray(vertical_eval_state["u"], dtype=float) if vertical_eval_state["u"] is not None else None,
+            exponent_guess=proc.param_exponent_upper if is_upper else proc.param_exponent_lower,
+        )
+        vertical_eval_state["x"] = x.copy()
+        vertical_eval_state["error"] = float(error)
+        vertical_eval_state["grad"] = grad_cp
+        vertical_eval_state["u"] = solved_u
+
+    def objective_vertical(vars_flat: np.ndarray) -> float:
         cp = _unpack_control_points(vars_flat, num_control_points)
-        sampled_curve = sampled_basis @ cp
-        error, _ = _nearest_sampled_distance_and_grad(surface_data, sampled_curve, sampled_basis)
-
+        ensure_vertical_eval(vars_flat, cp)
+        error = float(vertical_eval_state["error"])
         if smooth_w.size:
             diff = np.diff(cp, n=2, axis=0)
             error += float(np.sum((diff ** 2) * smooth_w[:, np.newaxis]))
         return error
 
-    def objective_euclidean_jac(vars_flat: np.ndarray) -> np.ndarray:
+    def objective_vertical_jac(vars_flat: np.ndarray) -> np.ndarray:
         cp = _unpack_control_points(vars_flat, num_control_points)
-        sampled_curve = sampled_basis @ cp
-        _, grad_cp = _nearest_sampled_distance_and_grad(surface_data, sampled_curve, sampled_basis)
+        ensure_vertical_eval(vars_flat, cp)
+        grad_cp = np.asarray(vertical_eval_state["grad"], dtype=float).copy()
 
         if smooth_w.size:
             diff = np.diff(cp, n=2, axis=0)
@@ -315,11 +311,11 @@ def fit_single_surface_g1(
         cp = _unpack_control_points(vars_flat, num_control_points)
         fitted = basis_matrix @ cp
         residual = fitted - surface_data
-        msr = float(np.sum(residual * residual))
+        error = float(np.sum(residual * residual))
         if smooth_w.size:
             diff = np.diff(cp, n=2, axis=0)
-            msr += float(np.sum((diff ** 2) * smooth_w[:, np.newaxis]))
-        return msr
+            error += float(np.sum((diff ** 2) * smooth_w[:, np.newaxis]))
+        return error
 
     def objective_msr_jac(vars_flat: np.ndarray) -> np.ndarray:
         cp = _unpack_control_points(vars_flat, num_control_points)
@@ -345,12 +341,12 @@ def fit_single_surface_g1(
 
     max_iter = max(300, 20 * num_control_points)
     pure_metric = _resolve_pure_fit_error_metric()
-    if pure_metric == "msr":
+    if pure_metric == "vertical":
+        objective_fn = objective_vertical
+        objective_jac_fn = objective_vertical_jac
+    else:
         objective_fn = objective_msr
         objective_jac_fn = objective_msr_jac
-    else:
-        objective_fn = objective_euclidean
-        objective_jac_fn = objective_euclidean_jac
     result = optimize.minimize(
         objective_fn,
         x0,

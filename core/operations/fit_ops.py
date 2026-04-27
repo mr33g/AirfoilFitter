@@ -14,10 +14,10 @@ from utils import bspline_helper
 
 
 def _resolve_pure_fit_error_metric() -> str:
-    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "euclidean")).strip().lower()
-    if metric == "msr":
-        return "msr"
-    return "euclidean"
+    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip()
+    if metric in {"msr", "vertical"}:
+        return metric
+    return "msr"
 
 
 def fit_bspline(
@@ -31,6 +31,7 @@ def fit_bspline(
     enforce_g2: bool = False,
     enforce_g3: bool = False,
     enforce_te_tangency: bool = True,
+    preserve_existing_knots: bool = False,
 ) -> bool:
     """Fit B-splines with G1 and optional G2/G3 constraints at leading edge."""
     try:
@@ -48,6 +49,7 @@ def fit_bspline(
 
         proc.degree_upper = proc.degree
         proc.degree_lower = proc.degree
+        proc.last_insertion_info = None
 
         proc.is_sharp_te = not is_thickened
 
@@ -69,6 +71,14 @@ def fit_bspline(
         upper_te_dir = bspline_helper.normalize_vector(upper_te_tangent_vector)
         lower_te_dir = bspline_helper.normalize_vector(lower_te_tangent_vector)
 
+        can_reuse_existing_knots = (
+            bool(preserve_existing_knots)
+            and proc.upper_knot_vector is not None
+            and proc.lower_knot_vector is not None
+            and len(proc.upper_knot_vector) == int(proc.num_cp_upper) + int(proc.degree_upper) + 1
+            and len(proc.lower_knot_vector) == int(proc.num_cp_lower) + int(proc.degree_lower) + 1
+        )
+
         if proc.enforce_g2:
             success = fit_with_g2_optimization(
                 proc,
@@ -78,6 +88,8 @@ def fit_bspline(
                 upper_te_dir,
                 lower_te_dir,
                 enforce_te_tangency,
+                use_existing_knot_vectors=can_reuse_existing_knots,
+                warm_start_from_current=can_reuse_existing_knots,
             )
             if not success:
                 proc.enforce_g2 = False
@@ -91,6 +103,7 @@ def fit_bspline(
                 upper_te_dir,
                 lower_te_dir,
                 enforce_te_tangency,
+                use_existing_knot_vectors=can_reuse_existing_knots,
             )
 
         proc._finalize_curves()
@@ -194,8 +207,6 @@ def fit_with_g2_optimization(
         start_vars: np.ndarray,
         basis_upper_local: np.ndarray,
         basis_lower_local: np.ndarray,
-        *,
-        euclidean_force_full_precision: bool = False,
     ) -> dict:
         return build_g2_problem(
             upper_data=upper_data,
@@ -217,8 +228,6 @@ def fit_with_g2_optimization(
             vars_to_control_points_fn=lambda x: vars_to_control_points(x, num_cp_upper, num_cp_lower),
             enforce_g3=proc.enforce_g3,
             fit_error_metric=metric,
-            num_fit_samples=int(getattr(config, "NUM_POINTS_CURVE_OPTIMIZATION_EUCLIDEAN", 1500)),
-            euclidean_force_full_precision=bool(euclidean_force_full_precision),
         )
 
     pure_metric = _resolve_pure_fit_error_metric()
@@ -238,37 +247,6 @@ def fit_with_g2_optimization(
     )
     total_iterations = int(getattr(result, "nit", -1))
 
-    euclidean_polish_used = False
-    euclidean_polish_success = False
-    if pure_metric == "euclidean" and bool(getattr(config, "EUCLIDEAN_ENABLE_POLISH", True)):
-        euclidean_polish_used = True
-        polish_maxiter = int(max(20, getattr(config, "EUCLIDEAN_POLISH_MAXITER", 120)))
-        polish_ftol = float(max(1e-12, getattr(config, "EUCLIDEAN_POLISH_FTOL", 1e-9)))
-        polish_start = np.asarray(getattr(result, "x", problem["initial_vars"]), dtype=float)
-        polish_problem = build_problem(
-            "euclidean",
-            polish_start,
-            basis_upper,
-            basis_lower,
-            euclidean_force_full_precision=True,
-        )
-        polish_constraints = polish_problem["constraints"]
-        polish_bounds = polish_problem["bounds"]
-        polish_result = optimize.minimize(
-            polish_problem["objective"],
-            polish_problem["initial_vars"],
-            method="SLSQP",
-            jac=polish_problem["objective_jac"],
-            constraints=polish_constraints,
-            bounds=polish_bounds,
-            options={"ftol": polish_ftol, "maxiter": polish_maxiter, "disp": False},
-        )
-        total_iterations += int(getattr(polish_result, "nit", 0))
-        if bool(getattr(polish_result, "success", False) or getattr(polish_result, "status", -1) == 0):
-            result = polish_result
-            problem = polish_problem
-            constraints = polish_constraints
-            euclidean_polish_success = True
     max_constraint_violation = 0.0
     if getattr(result, "x", None) is not None:
         x_final = np.asarray(result.x, dtype=float)
@@ -303,8 +281,6 @@ def fit_with_g2_optimization(
         "fit_error_samples_medium": int(problem.get("fit_error_samples_medium", -1)),
         "fit_error_refresh_every": int(problem.get("fit_error_refresh_every", -1)),
         "fit_error_force_full_precision": bool(problem.get("fit_error_force_full_precision", False)),
-        "euclidean_polish_used": bool(euclidean_polish_used),
-        "euclidean_polish_success": bool(euclidean_polish_success),
         "mode": "g3" if bool(proc.enforce_g3) else "g2",
     }
 
