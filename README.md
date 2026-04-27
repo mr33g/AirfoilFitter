@@ -75,7 +75,7 @@ python run_gui.py
 
 6. **Export**  
    - *Export DXF*: Exports upper and lower curves scaled to the specified chord length. Enable the *As Bezier* checkbox to export piecewise Bezier segments instead of NURBS.
-   - *Export BSP*: Saves control points and knot vectors in AirfoilEditor-compatible `.bsp` format.
+   - *Export BSP*: Saves control points and knot vectors in the JSON-based `.bsp` format used for tool interchange.
    - *Export DAT*: Saves a resampled coordinate file in Selig format.
 
 ### Configuration
