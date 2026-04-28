@@ -18,10 +18,14 @@ def finalize_curves(proc) -> None:
         proc.upper_control_points[1, 0] = 0.0
         proc.lower_control_points[1, 0] = 0.0
 
-        if proc.is_sharp_te:
-            te_point = np.array([1.0, 0.0])
-            proc.upper_control_points[-1] = te_point
-            proc.lower_control_points[-1] = te_point
+        upper_te_y = float(proc.upper_control_points[-1, 1])
+        lower_te_y = float(proc.lower_control_points[-1, 1])
+        te_half_gap = 0.0 if proc.is_sharp_te else 0.5 * (upper_te_y - lower_te_y)
+
+        proc.upper_control_points[-1, 0] = 1.0
+        proc.lower_control_points[-1, 0] = 1.0
+        proc.upper_control_points[-1, 1] = te_half_gap
+        proc.lower_control_points[-1, 1] = -te_half_gap
 
     if proc.upper_control_points is not None and proc.upper_knot_vector is not None:
         proc.upper_curve = interpolate.BSpline(proc.upper_knot_vector, proc.upper_control_points, proc.degree_upper)

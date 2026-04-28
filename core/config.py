@@ -22,15 +22,15 @@ DEFAULT_SMOOTHNESS_PENALTY: float = 0.0  # Weight for control point smoothing pe
 # ---- Manufacturing / Export defaults -------------------------------------
 DEFAULT_CHORD_LENGTH_MM: float = 200.0
 DEFAULT_TE_THICKNESS_MM: float = 0.0
-ENABLE_BSP_EXPORT: bool = False
-ENABLE_DAT_EXPORT: bool = False
+ENABLE_BSP_EXPORT: bool = True
+ENABLE_DAT_EXPORT: bool = True
 ENABLE_DXF_BEZIER_EXPORT: bool = False
 MIN_CP_NEIGHBOR_DISTANCE: float = 1.0e-3
 
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000
 FIT_ERROR_OBJECTIVE: str = "msr"
-KNOT_INSERTION_STRATEGY: str = "midspan"  # "adaptive" or "midspan"
+KNOT_INSERTION_STRATEGY: str = "adaptive"  # "adaptive" or "midspan"
 
 # Plot sampling settings
 # Curvature-adaptive sampling improves visual smoothness near the leading edge

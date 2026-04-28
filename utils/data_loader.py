@@ -216,6 +216,24 @@ def normalize_airfoil_data(upper_surface, lower_surface, logger_func=print, real
         upper_normalized[:, 1] -= y_shift
         lower_normalized[:, 1] -= y_shift
 
+    # Enforce exact normalized boundary conditions after rotation/scaling.
+    # For split trailing edges, the rotation is based on the TE midpoint, which can leave
+    # the individual upper/lower TE points slightly skewed in x due to floating-point drift.
+    upper_normalized[0] = np.array([0.0, 0.0], dtype=float)
+    lower_normalized[0] = np.array([0.0, 0.0], dtype=float)
+    upper_normalized[-1, 0] = 1.0
+    lower_normalized[-1, 0] = 1.0
+
+    y_te_upper = float(upper_normalized[-1, 1])
+    y_te_lower = float(lower_normalized[-1, 1])
+    if np.isclose(y_te_upper, y_te_lower, atol=tol):
+        upper_normalized[-1, 1] = 0.0
+        lower_normalized[-1, 1] = 0.0
+    else:
+        te_half_gap = 0.5 * (y_te_upper - y_te_lower)
+        upper_normalized[-1, 1] = te_half_gap
+        lower_normalized[-1, 1] = -te_half_gap
+
     return upper_normalized, lower_normalized
 
 def load_airfoil_data(filename, logger_func=print):

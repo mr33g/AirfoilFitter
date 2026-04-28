@@ -200,12 +200,12 @@ class FileController:
             and self.processor.lower_data is not None
         ):
             try:
-                _, upper_max_err, upper_max_err_idx, _ = bspline_controller.calculate_bspline_fitting_error(
+                upper_sum_sq, upper_max_err, upper_max_err_idx, _ = bspline_controller.calculate_bspline_fitting_error(
                     bspline_proc.upper_curve,
                     self.processor.upper_data,
                     return_max_error=True,
                 )
-                _, lower_max_err, lower_max_err_idx, _ = bspline_controller.calculate_bspline_fitting_error(
+                lower_sum_sq, lower_max_err, lower_max_err_idx, _ = bspline_controller.calculate_bspline_fitting_error(
                     bspline_proc.lower_curve,
                     self.processor.lower_data,
                     return_max_error=True,
@@ -214,9 +214,16 @@ class FileController:
                 bspline_proc.last_upper_max_error_idx = upper_max_err_idx
                 bspline_proc.last_lower_max_error = lower_max_err
                 bspline_proc.last_lower_max_error_idx = lower_max_err_idx
+                upper_rms_err = float(np.sqrt(upper_sum_sq / len(self.processor.upper_data))) if len(self.processor.upper_data) else 0.0
+                lower_rms_err = float(np.sqrt(lower_sum_sq / len(self.processor.lower_data))) if len(self.processor.lower_data) else 0.0
+                upper_max_pct = upper_max_err * 100.0
+                upper_rms_pct = upper_rms_err * 100.0
+                lower_max_pct = lower_max_err * 100.0
+                lower_rms_pct = lower_rms_err * 100.0
                 self.processor.log_message.emit(
-                    f"BSP error metrics updated. Upper max error: {upper_max_err:.6e}, "
-                    f"Lower max error: {lower_max_err:.6e}"
+                    f"BSP error metrics updated (% chord). Upper max error: {upper_max_pct:.4f}%, "
+                    f"Upper RMS error: {upper_rms_pct:.4f}%, Lower max error: {lower_max_pct:.4f}%, "
+                    f"Lower RMS error: {lower_rms_pct:.4f}%"
                 )
             except Exception as exc:
                 self.processor.log_message.emit(f"Warning: Could not compute BSP error metrics: {exc}")

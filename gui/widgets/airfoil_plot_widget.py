@@ -362,24 +362,36 @@ class AirfoilPlotWidget(pg.PlotWidget):
         bspline_num_cp_upper,
         bspline_num_cp_lower,
     ) -> None:
-        if chord_length_mm is not None and (max_bspline_upper is not None or max_bspline_lower is not None):
+        if max_bspline_upper is not None or max_bspline_lower is not None:
             error_html = '<div style="text-align: right; color: #FF6B6B; font-size: 10pt;">'
             error_html += self._build_cp_info_html(bspline_num_cp_upper, bspline_num_cp_lower)
 
             if max_bspline_upper is not None and max_bspline_lower is not None:
-                max_upper_mm = max_bspline_upper * chord_length_mm
-                max_lower_mm = max_bspline_lower * chord_length_mm
-                error_html += (
-                    "B-spline Max Error (Upper/Lower): "
-                    f"{max_bspline_upper:.2e} ({max_upper_mm:.3f} mm) / "
-                    f"{max_bspline_lower:.2e} ({max_lower_mm:.3f} mm)"
-                )
+                if chord_length_mm is not None:
+                    max_upper_mm = max_bspline_upper * chord_length_mm
+                    max_lower_mm = max_bspline_lower * chord_length_mm
+                    error_html += (
+                        "B-spline Max Error (Upper/Lower): "
+                        f"{max_bspline_upper:.2e} ({max_upper_mm:.3f} mm) / "
+                        f"{max_bspline_lower:.2e} ({max_lower_mm:.3f} mm)"
+                    )
+                else:
+                    error_html += (
+                        "B-spline Max Error (Upper/Lower): "
+                        f"{max_bspline_upper:.2e} / {max_bspline_lower:.2e}"
+                    )
             elif max_bspline_upper is not None:
-                max_upper_mm = max_bspline_upper * chord_length_mm
-                error_html += f"B-spline Max Error (Upper): {max_bspline_upper:.2e} ({max_upper_mm:.3f} mm)"
+                if chord_length_mm is not None:
+                    max_upper_mm = max_bspline_upper * chord_length_mm
+                    error_html += f"B-spline Max Error (Upper): {max_bspline_upper:.2e} ({max_upper_mm:.3f} mm)"
+                else:
+                    error_html += f"B-spline Max Error (Upper): {max_bspline_upper:.2e}"
             elif max_bspline_lower is not None:
-                max_lower_mm = max_bspline_lower * chord_length_mm
-                error_html += f"B-spline Max Error (Lower): {max_bspline_lower:.2e} ({max_lower_mm:.3f} mm)"
+                if chord_length_mm is not None:
+                    max_lower_mm = max_bspline_lower * chord_length_mm
+                    error_html += f"B-spline Max Error (Lower): {max_bspline_lower:.2e} ({max_lower_mm:.3f} mm)"
+                else:
+                    error_html += f"B-spline Max Error (Lower): {max_bspline_lower:.2e}"
 
             error_html += "</div>"
             text_item = pg.TextItem(html=error_html, anchor=(1, 1))

@@ -252,16 +252,13 @@ class BSplineController:
             self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
             self.bspline_processor.last_lower_max_error = lower_max_err
             self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
+            _ = upper_sum_sq, lower_sum_sq
             
             # Use the degree that was actually used for fitting
             max_cp = max(num_cp_upper, num_cp_lower)
             max_deg = max(self.bspline_processor.degree_upper, self.bspline_processor.degree_lower)
             num_spans = max_cp - max_deg
             span_info = f"{num_spans} span" if num_spans == 1 else f"{num_spans} spans"
-            self.window.status_log.append(
-                f"B-spline fit OK (degrees {self.bspline_processor.degree_upper}/{self.bspline_processor.degree_lower}, {span_info}). "
-                f"Upper max error: {upper_max_err:.6e}, Lower max error: {lower_max_err:.6e}"
-            )
             upper_vertical = self.calculate_bspline_vertical_error(
                 self.bspline_processor.upper_curve,
                 self.processor.upper_data,
@@ -273,13 +270,13 @@ class BSplineController:
                 exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
             )
             self.window.status_log.append(
-                "Final error comparison: "
-                f"Euclidean max upper/lower = {upper_max_err:.6e} / {lower_max_err:.6e}; "
-                f"Vertical max upper/lower = {upper_vertical['max_error']:.6e} / {lower_vertical['max_error']:.6e}"
+                f"B-spline fit OK (degrees {self.bspline_processor.degree_upper}/{self.bspline_processor.degree_lower}, {span_info}). "
+                f"Vertical max upper/lower (% chord) = "
+                f"{upper_vertical['max_error'] * 100.0:.4f}% / {lower_vertical['max_error'] * 100.0:.4f}%"
             )
             self.window.status_log.append(
-                "Vertical RMS upper/lower = "
-                f"{upper_vertical['rms']:.6e} / {lower_vertical['rms']:.6e}"
+                "Vertical RMS upper/lower (% chord) = "
+                f"{upper_vertical['rms'] * 100.0:.4f}% / {lower_vertical['rms'] * 100.0:.4f}%"
             )
             
             # Update control point labels in the UI (use actual values from processor)
@@ -545,13 +542,12 @@ class BSplineController:
                 exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
             )
             self.window.status_log.append(
-                "Post-insert error comparison: "
-                f"Euclidean max upper/lower = {upper_max_err:.6e} / {lower_max_err:.6e}; "
-                f"Vertical max upper/lower = {upper_vertical['max_error']:.6e} / {lower_vertical['max_error']:.6e}"
+                "Post-insert vertical max upper/lower (% chord) = "
+                f"{upper_vertical['max_error'] * 100.0:.4f}% / {lower_vertical['max_error'] * 100.0:.4f}%"
             )
             self.window.status_log.append(
-                "Post-insert vertical RMS upper/lower = "
-                f"{upper_vertical['rms']:.6e} / {lower_vertical['rms']:.6e}"
+                "Post-insert vertical RMS upper/lower (% chord) = "
+                f"{upper_vertical['rms'] * 100.0:.4f}% / {lower_vertical['rms'] * 100.0:.4f}%"
             )
             self.window.optimizer_panel.upper_cp_label.setText(f"Upper CPs: {self.bspline_processor.num_cp_upper}")
             self.window.optimizer_panel.lower_cp_label.setText(f"Lower CPs: {self.bspline_processor.num_cp_lower}")
