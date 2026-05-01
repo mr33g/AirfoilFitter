@@ -260,9 +260,14 @@ def fit_with_g2_optimization(
         for constraint in constraints:
             cval = np.asarray(constraint["fun"](x_final), dtype=float).ravel()
             if cval.size:
+                ctype = str(constraint.get("type", "eq")).strip().lower()
+                if ctype == "ineq":
+                    violation = float(np.max(np.maximum(0.0, -cval)))
+                else:
+                    violation = float(np.max(np.abs(cval)))
                 max_constraint_violation = max(
                     max_constraint_violation,
-                    float(np.max(np.abs(cval))),
+                    violation,
                 )
     relaxed_success = (
         int(getattr(result, "status", -1)) == 9

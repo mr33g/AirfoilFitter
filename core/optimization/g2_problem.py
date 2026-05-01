@@ -199,6 +199,29 @@ def build_g2_problem(
             return finite_diff_jacobian(curvature_derivative_constraint, vars)
         return layout.gradients_to_vars(grad_upper, -grad_lower)
 
+    def append_monotonic_x_constraints(is_upper: bool, num_cp: int) -> None:
+        for i in range(1, num_cp - 1):
+            idx_current = layout.var_index(is_upper, i, 0)
+            idx_next = layout.var_index(is_upper, i + 1, 0)
+            if idx_current is None and idx_next is None:
+                continue
+
+            def monotonic_fun(vars, is_upper_local=is_upper, i_local=i):
+                cp_upper, cp_lower = cached_control_points(vars)
+                cp = cp_upper if is_upper_local else cp_lower
+                return float(cp[i_local + 1, 0] - cp[i_local, 0])
+
+            def monotonic_jac(vars, idx_current_local=idx_current, idx_next_local=idx_next):
+                _ = vars
+                jac = np.zeros(num_vars, dtype=float)
+                if idx_next_local is not None:
+                    jac[idx_next_local] += 1.0
+                if idx_current_local is not None:
+                    jac[idx_current_local] -= 1.0
+                return jac
+
+            constraints.append({"type": "ineq", "fun": monotonic_fun, "jac": monotonic_jac})
+
     constraints = [
         {"type": "eq", "fun": curvature_constraint, "jac": curvature_constraint_jac},
     ]
@@ -302,6 +325,10 @@ def build_g2_problem(
                 {"type": "eq", "fun": te_tangent_constraint_lower, "jac": te_tangent_constraint_lower_jac},
             ]
         )
+
+    if metric == "vertical":
+        append_monotonic_x_constraints(True, num_cp_upper)
+        append_monotonic_x_constraints(False, num_cp_lower)
 
     n_free_upper = num_cp_upper - 3
     n_free_lower = num_cp_lower - 3

@@ -114,6 +114,7 @@ def _build_linear_constraints(
     num_control_points: int,
     te_tangent_vector: np.ndarray | None,
     te_point: np.ndarray | None,
+    enforce_monotonic_x: bool = False,
 ) -> list[dict]:
     constraints: list[dict] = []
 
@@ -123,6 +124,17 @@ def _build_linear_constraints(
         constraints.append(
             {
                 "type": "eq",
+                "fun": lambda x, r=row_local, b=rhs_local: float(np.dot(r, x) - b),
+                "jac": lambda x, r=row_local: r,
+            }
+        )
+
+    def add_linear_ineq(row: np.ndarray, rhs: float) -> None:
+        row_local = np.asarray(row, dtype=float).copy()
+        rhs_local = float(rhs)
+        constraints.append(
+            {
+                "type": "ineq",
                 "fun": lambda x, r=row_local, b=rhs_local: float(np.dot(r, x) - b),
                 "jac": lambda x, r=row_local: r,
             }
@@ -156,6 +168,13 @@ def _build_linear_constraints(
         row = np.zeros(2 * num_control_points, dtype=float)
         row[2 * num_control_points - 1] = 1.0
         add_linear_eq(row, te_point[1])
+
+    if enforce_monotonic_x:
+        for i in range(1, num_control_points - 1):
+            row = np.zeros(2 * num_control_points, dtype=float)
+            row[i + 1] = 1.0
+            row[i] = -1.0
+            add_linear_ineq(row, 0.0)
 
     return constraints
 
@@ -331,7 +350,13 @@ def fit_single_surface_g1(
                 grad_cp[i + 2] += scale * diff[i]
         return _pack_control_points(grad_cp)
 
-    constraints = _build_linear_constraints(num_control_points, te_tangent_vector, te_point)
+    pure_metric = _resolve_pure_fit_error_metric()
+    constraints = _build_linear_constraints(
+        num_control_points,
+        te_tangent_vector,
+        te_point,
+        enforce_monotonic_x=(pure_metric == "vertical"),
+    )
     bounds: list[tuple[float | None, float | None]] = [(None, None)] * (2 * num_control_points)
     y1_idx = num_control_points + 1
     if is_upper:
@@ -340,7 +365,6 @@ def fit_single_surface_g1(
         bounds[y1_idx] = (None, 0.0)
 
     max_iter = max(300, 20 * num_control_points)
-    pure_metric = _resolve_pure_fit_error_metric()
     if pure_metric == "vertical":
         objective_fn = objective_vertical
         objective_jac_fn = objective_vertical_jac
