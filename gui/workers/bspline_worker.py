@@ -32,7 +32,6 @@ class BSplineWorker(QThread):
         self.lower_te_tangent_vector = None
         self.enforce_g2 = False
         self.enforce_g3 = False
-        self.enforce_te_tangency = True
         self.preserve_existing_knots = False
         
         # Parameters for insert knot operation
@@ -49,7 +48,6 @@ class BSplineWorker(QThread):
         lower_te_tangent_vector: np.ndarray | None,
         enforce_g2: bool,
         enforce_g3: bool,
-        enforce_te_tangency: bool,
         preserve_existing_knots: bool = False,
     ):
         """Set up parameters for a B-spline fitting operation."""
@@ -62,7 +60,6 @@ class BSplineWorker(QThread):
         self.lower_te_tangent_vector = lower_te_tangent_vector.copy() if lower_te_tangent_vector is not None else None
         self.enforce_g2 = enforce_g2
         self.enforce_g3 = enforce_g3
-        self.enforce_te_tangency = enforce_te_tangency
         self.preserve_existing_knots = preserve_existing_knots
     
     def setup_insert_knot_operation(
@@ -102,7 +99,6 @@ class BSplineWorker(QThread):
             self.lower_te_tangent_vector,
             self.enforce_g2,
             self.enforce_g3,
-            self.enforce_te_tangency,
             self.preserve_existing_knots,
         )
         
@@ -110,11 +106,11 @@ class BSplineWorker(QThread):
             # Create a summary message
             g2_status = "enabled" if self.enforce_g2 else "disabled"
             g3_status = "enabled" if self.enforce_g3 else "disabled"
-            te_tangency_status = "enabled" if self.enforce_te_tangency else "disabled"
-            message = f"B-spline fitting completed (G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status})"
+            message = f"B-spline fitting completed (G2: {g2_status}, G3: {g3_status}, TE handle: enabled)"
             self.finished.emit(True, message)
         else:
-            self.finished.emit(False, "B-spline fitting failed.")
+            error_message = getattr(self.bspline_processor, "last_error_message", None) or "B-spline fitting failed."
+            self.finished.emit(False, error_message)
     
     def _run_insert_knot(self) -> None:
         """Execute knot insertion in the worker thread."""

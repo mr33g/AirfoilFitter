@@ -6,6 +6,9 @@ from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 from PySide6.QtGui import QFont
 from PySide6.QtCore import QTimer
 
+from core import config
+from core.debug_log import write_debug_line
+
 
 class StatusLogWidget(QWidget):
     """Simple wrapper around ``QTextEdit`` that defaults to monospaced, read-only."""
@@ -38,6 +41,8 @@ class StatusLogWidget(QWidget):
         if self._spinner_active:
             self._remove_spinner_line()
         self._text_edit.append(text)
+        if config.DEBUG_WORKER_LOGGING:
+            write_debug_line(text)
         # Re-add spinner if it was active
         if self._spinner_active:
             self._add_spinner_line()

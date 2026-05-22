@@ -6,6 +6,7 @@ from scipy.interpolate import BSpline
 from scipy.spatial import cKDTree
 from core import config
 from core.bspline_processor import BSplineProcessor
+from core.debug_log import write_debug_line
 from core.optimization import vertical_error_metrics
 from gui.workers.bspline_worker import BSplineWorker
 
@@ -23,6 +24,42 @@ class BSplineController:
         
         # Worker thread for long-running operations
         self._current_worker: BSplineWorker | None = None
+
+    def _append_debug_message(self, message: str) -> None:
+        if config.DEBUG_WORKER_LOGGING:
+            write_debug_line(message)
+
+    def _append_debug_control_points(self) -> None:
+        if not config.DEBUG_WORKER_LOGGING:
+            return
+        if self.bspline_processor.upper_control_points is None or self.bspline_processor.lower_control_points is None:
+            return
+        self._append_debug_message("[DEBUG] Final control points:")
+        for i, point in enumerate(np.asarray(self.bspline_processor.upper_control_points)):
+            self._append_debug_message(f"[DEBUG]   Upper P{i}: ({point[0]:.6f}, {point[1]:.6f})")
+        for i, point in enumerate(np.asarray(self.bspline_processor.lower_control_points)):
+            self._append_debug_message(f"[DEBUG]   Lower P{i}: ({point[0]:.6f}, {point[1]:.6f})")
+
+    def _append_debug_cp_fourth_differences(self) -> None:
+        """Analysis only: log fourth finite differences of the control polygons."""
+        if not config.DEBUG_WORKER_LOGGING:
+            return
+
+        for surface_name, control_points in (
+            ("Upper", self.bspline_processor.upper_control_points),
+            ("Lower", self.bspline_processor.lower_control_points),
+        ):
+            if control_points is None or len(control_points) < 5:
+                continue
+            d4 = np.diff(np.asarray(control_points, dtype=float)[:, :2], n=4, axis=0)
+            magnitudes = np.linalg.norm(d4, axis=1)
+            max_idx = int(np.argmax(magnitudes)) if magnitudes.size else -1
+            max_mag = float(magnitudes[max_idx]) if max_idx >= 0 else 0.0
+            self._append_debug_message(
+                "[DEBUG] CP fourth differences "
+                f"{surface_name}: count={len(d4)}, max_norm={max_mag:.3e}, "
+                f"max_window=P{max_idx}..P{max_idx + 4}"
+            )
 
     def _selected_fit_objective(self) -> str:
         """Return normalized objective selection from UI."""
@@ -42,7 +79,13 @@ class BSplineController:
         
         Preserves the current control point configuration.
         """
-        if not self.bspline_processor.is_fitted():
+        has_existing_model = (
+            self.bspline_processor.upper_control_points is not None
+            and self.bspline_processor.lower_control_points is not None
+            and self.bspline_processor.upper_knot_vector is not None
+            and self.bspline_processor.lower_knot_vector is not None
+        )
+        if not self.bspline_processor.is_fitted() and not has_existing_model:
             return  # No existing fit, do nothing
 
         if getattr(self.processor, "upper_data", None) is None:
@@ -53,43 +96,23 @@ class BSplineController:
         self._refitting = True
         self.fit_bspline()
 
-    def handle_te_vector_points_changed(self) -> None:
-        """Handle TE vector points dropdown changes.
-        
-        Always recalculates TE vectors from the input data.
-        If a fit exists and tangency is disabled: preserves the fit and just updates vectors.
-        If a fit exists and tangency is enabled: re-fits with new TE vectors.
-        """
-        if getattr(self.processor, "upper_data", None) is None:
-            return  # No data loaded
-        
-        opt = self.window.optimizer_panel
-        try:
-            te_vector_points = int(opt.te_vector_points_combo.currentText())
-        except ValueError:
+    def refit_smoothing_full(self) -> None:
+        """Re-fit B-spline from a fresh solve when the smoothness slider is released."""
+        has_existing_model = (
+            self.bspline_processor.upper_control_points is not None
+            and self.bspline_processor.lower_control_points is not None
+        )
+        if not self.bspline_processor.is_fitted() and not has_existing_model:
             return
-        
-        is_fitted = self.bspline_processor.is_fitted()
-        tangency_enabled = opt.enforce_te_tangency_checkbox.isChecked()
-        
-        # Recalculate TE vectors (this updates processor's TE vector data)
-        self.processor.recalculate_te_vectors(te_vector_points)
-        self.window.status_log.append(f"TE vectors recalculated with {te_vector_points} points.")
-        
-        if is_fitted:
-            if tangency_enabled:
-                # Re-fit with new TE vectors, preserving current CP configuration
-                self.window.status_log.append("TE tangency enabled, re-fitting B-spline...")
-                self._refitting = True
-                self.fit_bspline()
-            else:
-                # Just update the plot with existing B-spline (preserves fit)
-                self._update_plot_with_bsplines()
-        else:
-            # No fit exists, just update the plot with TE vectors
-            self.processor.update_plot()
 
+        if getattr(self.processor, "upper_data", None) is None:
+            return
 
+        self.window.status_log.append("Smoothness changed, fitting B-spline...")
+        if hasattr(self, "_refitting"):
+            self._refitting = False
+        self._fresh_refit_preserve_counts = True
+        self.fit_bspline()
 
     def fit_bspline(self) -> None:
         """Fit B-spline curves to loaded airfoil data."""
@@ -115,11 +138,8 @@ class BSplineController:
             # Get G3 flag from GUI checkbox
             enforce_g3 = self.window.optimizer_panel.g3_checkbox.isChecked()
             
-            # Get TE tangency flag from GUI checkbox
-            enforce_te_tangency = self.window.optimizer_panel.enforce_te_tangency_checkbox.isChecked()
-            
             # Get smoothness penalty from GUI
-            smoothing_weight = float(self.window.optimizer_panel.smoothness_penalty_spin.value())
+            smoothing_weight = float(self.window.optimizer_panel.smoothness_penalty_value())
             self.bspline_processor.smoothing_weight = smoothing_weight
 
             # Get fit objective from GUI and apply globally for the optimizer path.
@@ -127,7 +147,14 @@ class BSplineController:
             
             # Determine control point counts
             # If we're coming from an automatic refinement (knot insertion), we might have asymmetric counts
-            if hasattr(self, "_refitting") and self._refitting:
+            if bool(getattr(self, "_fresh_refit_preserve_counts", False)):
+                num_cp_upper = self.bspline_processor.num_cp_upper or gui_cp
+                num_cp_lower = self.bspline_processor.num_cp_lower or gui_cp
+                self.bspline_processor.param_exponent_upper = 0.5
+                self.bspline_processor.param_exponent_lower = 0.5
+                preserve_existing_knots = False
+                self._fresh_refit_preserve_counts = False
+            elif hasattr(self, "_refitting") and self._refitting:
                 num_cp_upper = self.bspline_processor.num_cp_upper
                 num_cp_lower = self.bspline_processor.num_cp_lower
                 preserve_existing_knots = (
@@ -153,7 +180,6 @@ class BSplineController:
                 'num_cp_lower': num_cp_lower,
                 'enforce_g2': enforce_g2,
                 'enforce_g3': enforce_g3,
-                'enforce_te_tangency': enforce_te_tangency,
                 'fit_error_objective': objective_metric,
                 'preserve_existing_knots': preserve_existing_knots,
             }
@@ -169,7 +195,6 @@ class BSplineController:
                 self.processor.lower_te_tangent_vector,
                 enforce_g2,
                 enforce_g3,
-                enforce_te_tangency,
                 preserve_existing_knots,
             )
             
@@ -199,7 +224,6 @@ class BSplineController:
             params = getattr(self, '_pending_fit_params', {})
             requested_g2 = params.get('enforce_g2', False)
             requested_g3 = params.get('enforce_g3', False)
-            requested_te_tangency = params.get('enforce_te_tangency', True)
             actual_g2 = bool(self.bspline_processor.enforce_g2)
             actual_g3 = bool(self.bspline_processor.enforce_g3)
             num_cp_upper = params.get('num_cp_upper', 10)
@@ -208,9 +232,8 @@ class BSplineController:
             # Log requested vs actual continuity settings.
             g2_status = "enabled" if actual_g2 else "disabled"
             g3_status = "enabled" if actual_g3 else "disabled"
-            te_tangency_status = "enabled" if requested_te_tangency else "disabled"
             self.window.status_log.append(
-                f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE tangency: {te_tangency_status}"
+                f"B-spline fitting with G2: {g2_status}, G3: {g3_status}, TE handle: enabled"
             )
             if requested_g2 and not actual_g2:
                 self.window.status_log.append(
@@ -224,16 +247,64 @@ class BSplineController:
             if isinstance(opt_info, dict):
                 mode = opt_info.get("mode")
                 metric = opt_info.get("fit_error_metric")
-                samples = opt_info.get("fit_error_samples")
+                self._append_debug_message(
+                    "[DEBUG] Smoothness: "
+                    f"weight={float(opt_info.get('smoothing_weight', self.bspline_processor.smoothing_weight)):.3f}, "
+                    "mode=control_point_fourth_diff"
+                )
+                self._append_debug_message(
+                    "[DEBUG] Solver: "
+                    f"profile={str(opt_info.get('solver_profile', 'unknown'))}, "
+                    f"success={bool(opt_info.get('success', False))}, "
+                    f"accepted={bool(opt_info.get('accepted', False))}, "
+                    f"status={int(opt_info.get('status', -1))}, "
+                    f"iterations={int(opt_info.get('iterations', -1))}, "
+                    f"objective={float(opt_info.get('objective', float('nan'))):.3e}, "
+                    f"constraint violation={float(opt_info.get('max_constraint_violation', float('nan'))):.3e}"
+                )
+                self._append_debug_message(
+                    "[DEBUG] Objective terms: "
+                    f"initial fit/smooth={float(opt_info.get('initial_fit_error_total', float('nan'))):.3e}/"
+                    f"{float(opt_info.get('initial_smoothing_penalty_total', float('nan'))):.3e}, "
+                    f"final fit/smooth={float(opt_info.get('final_fit_error_total', float('nan'))):.3e}/"
+                    f"{float(opt_info.get('final_smoothing_penalty_total', float('nan'))):.3e}"
+                )
+                self._append_debug_message(
+                    "[DEBUG] Smoothing scale: "
+                    f"baseline raw={float(opt_info.get('raw_smoothing_baseline_total', float('nan'))):.3e}, "
+                    f"fit ref={float(opt_info.get('smoothing_reference_fit', float('nan'))):.3e}, "
+                    f"scale={float(opt_info.get('smoothing_objective_scale', float('nan'))):.3e}"
+                )
+                self._append_debug_message(
+                    "[DEBUG] Smoothing terms: "
+                    f"upper fourth={float(opt_info.get('final_smoothing_penalty_upper_fourth_diff', float('nan'))):.3e}, "
+                    f"lower fourth={float(opt_info.get('final_smoothing_penalty_lower_fourth_diff', float('nan'))):.3e}"
+                )
+                te_handle_final = float(opt_info.get('final_te_handle_penalty_total', float('nan')))
+                if np.isfinite(te_handle_final):
+                    self._append_debug_message(
+                        "[DEBUG] TE handle quality: "
+                        f"weight={float(opt_info.get('te_handle_weight', float('nan'))):.3f}, "
+                        f"min_len={float(opt_info.get('te_handle_min_length', float('nan'))):.3f}, "
+                        f"initial/final={float(opt_info.get('initial_te_handle_penalty_total', float('nan'))):.3e}/"
+                        f"{te_handle_final:.3e}, "
+                        f"scale={float(opt_info.get('te_handle_objective_scale', float('nan'))):.3e}"
+                    )
+                    self._append_debug_message(
+                        "[DEBUG] TE handle terms: "
+                        f"upper angle/short/len="
+                        f"{float(opt_info.get('final_te_handle_penalty_upper_angle', float('nan'))):.3e}/"
+                        f"{float(opt_info.get('final_te_handle_penalty_upper_short_length', float('nan'))):.3e}/"
+                        f"{float(opt_info.get('final_te_handle_upper_length', float('nan'))):.3f}, "
+                        f"lower angle/short/len="
+                        f"{float(opt_info.get('final_te_handle_penalty_lower_angle', float('nan'))):.3e}/"
+                        f"{float(opt_info.get('final_te_handle_penalty_lower_short_length', float('nan'))):.3e}/"
+                        f"{float(opt_info.get('final_te_handle_lower_length', float('nan'))):.3f}"
+                    )
                 if mode is not None:
                     self.window.status_log.append(f"Fit mode used: {mode}.")
-                if metric is not None and samples is not None:
-                    if int(samples) > 0:
-                        self.window.status_log.append(
-                            f"Fit objective metric: {metric} (samples/surface: {samples})."
-                        )
-                    else:
-                        self.window.status_log.append(f"Fit objective metric: {metric}.")
+                if metric is not None:
+                    self.window.status_log.append(f"Fit objective metric: {metric}.")
             
             # Calculate and display errors for each surface
             upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
@@ -278,6 +349,8 @@ class BSplineController:
                 "Vertical RMS upper/lower (% chord) = "
                 f"{upper_vertical['rms'] * 100.0:.4f}% / {lower_vertical['rms'] * 100.0:.4f}%"
             )
+            self._append_debug_cp_fourth_differences()
+            self._append_debug_control_points()
             
             # Update control point labels in the UI (use actual values from processor)
             self.window.optimizer_panel.upper_cp_label.setText(f"Upper CPs: {self.bspline_processor.num_cp_upper}")
@@ -290,6 +363,16 @@ class BSplineController:
             self._update_plot_with_bsplines()
         else:
             self.window.status_log.append(message)
+            opt_info = getattr(self.bspline_processor, "last_optimizer_info", None)
+            if isinstance(opt_info, dict):
+                status = opt_info.get("status")
+                detail = opt_info.get("message")
+                violation = opt_info.get("max_constraint_violation")
+                self._append_debug_message(
+                    "[DEBUG] G2 failure: "
+                    f"status={status}, violation={float(violation) if violation is not None else float('nan'):.3e}, "
+                    f"message={detail}"
+                )
         
         # Clean up worker
         if self._current_worker:
@@ -339,13 +422,10 @@ class BSplineController:
         # Fit-driving optimizer controls are read-only while a fit is running
         opt.initial_cp_spin.setEnabled(enabled)
         opt.bspline_degree_spin.setEnabled(enabled)
-        opt.smoothness_penalty_spin.setEnabled(enabled)
+        opt.smoothness_penalty_slider.setEnabled(enabled)
         opt.fit_objective_combo.setEnabled(enabled)
         opt.g2_checkbox.setEnabled(enabled)
         opt.g3_checkbox.setEnabled(enabled and opt.g2_checkbox.isChecked())
-        opt.enforce_te_tangency_checkbox.setEnabled(enabled)
-        opt.te_vector_points_combo.setEnabled(enabled)
-
         # Comb controls are read-only while a fit is running
         self.window.comb_panel.comb_scale_slider.setEnabled(enabled and is_model_built)
         self.window.comb_panel.comb_density_slider.setEnabled(enabled and is_model_built)

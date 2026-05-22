@@ -63,9 +63,11 @@ python run_gui.py
 3. **Adjust Parameters**
    - **Degree**: B-spline polynomial degree (4–12). Higher degrees allow smoother curves but may be less stable.
    - **Initial CP count**: Initial control points per surface. Must be greater than degree. Point inisertion is biased towards the location of max error, so starting from a low initial count will produce different results than a high initial count.
-   - **Smoothness**: Regularization weight. Higher values produce smoother control point distributions at the cost of fitting accuracy.
+   - **Smoothness**: Second-difference regularization weight. Higher values produce smoother control polygons at the cost of fitting accuracy. The slider uses a nonlinear mapping so the low end gives finer control.
    - **G2 / G3**: Enable curvature (G2) or curvature-derivative (G3) continuity at the leading edge.
    - **TE tangency**: Constrain trailing edge tangent direction to match the input data.
+
+   Releasing the **Smoothness** slider triggers a fresh fit at the selected setting. Other parameter changes re-fit the current model when possible.
 
 4. **Refine the Fit**
    Use the **+** buttons next to each surface label to insert control points. Knots are inserted at the location of maximum deviation.
@@ -98,7 +100,7 @@ Available keys:
 | `DEBUG_WORKER_LOGGING`       | False   | Enable verbose worker logging                            |
 | `DEFAULT_BSPLINE_DEGREE`     | 4       | Initial B-spline degree                                  |
 | `DEFAULT_BSPLINE_CP`         | 9       | Initial control points per surface                       |
-| `DEFAULT_SMOOTHNESS_PENALTY` | 0.001   | Regularization weight for control point smoothing        |
+| `DEFAULT_SMOOTHNESS_PENALTY` | 0.0     | Base second-difference smoothing weight                  |
 | `DEFAULT_CHORD_LENGTH_MM`    | 200.0   | Default chord length used for export scaling             |
 | `DEFAULT_TE_THICKNESS_MM`    | 0.0     | Default trailing edge thickness value in the UI          |
 | `ENABLE_BSP_EXPORT`          | False   | Enable BSP export action                                 |
@@ -133,9 +135,12 @@ The fitting algorithm solves a constrained least-squares problem:
    - **Trailing edge position**: The last control point is constrained to the trailing edge coordinates.
    - **Trailing edge tangent** (optional): The direction of the curve at u=1 is constrained to match a tangent vector computed from the input data.
 
-4. **Optimization**: When G2/G3 constraints are enabled, the problem is solved using SLSQP (Sequential Least Squares Programming). The objective function combines fitting error with a smoothness penalty on second-order differences of control points.
+4. **Optimization**: When G2/G3 constraints are enabled, the problem is solved using SLSQP (Sequential Least Squares Programming). The objective function combines fitting error with a scaled second-difference penalty on the control polygon.
 
-5. **Smoothness Penalty**: A gradient-weighted penalty is applied, with lower weight near the leading edge (allowing the curve to follow high curvature) and higher weight toward the trailing edge (reducing oscillation in low-curvature regions).
+5. **Control-Polygon Regularization**:
+   - **Hard x-bounds**: Free control-point x-coordinates are bounded to the normalized chord domain `[0, 1]`.
+   - **Hard x-monotonicity**: Neighboring control points on each surface are constrained to remain monotone in x.
+   - **Smoothness slider**: Only the second-difference term is controlled by the slider. A value of `0` gives a pure fit under the geometric constraints; higher values increasingly favor a smoother control polygon.
 
 ### Trailing Edge Thickening
 

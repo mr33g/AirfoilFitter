@@ -105,6 +105,14 @@ def smoothing_weights(num_cp: int) -> np.ndarray:
     return grad * grad
 
 
+def fourth_difference_smoothing_weights(num_cp: int) -> np.ndarray:
+    if num_cp <= 4:
+        return np.zeros(0, dtype=float)
+    idx = np.arange(num_cp - 4, dtype=float)
+    grad = 0.5 + 1.5 * (idx / (num_cp - 5)) if num_cp > 5 else np.ones(num_cp - 4, dtype=float)
+    return grad * grad
+
+
 def build_bounds(n_free_upper: int, n_free_lower: int) -> list[tuple[float | None, float | None]]:
     bounds: list[tuple[float | None, float | None]] = []
     bounds.append((0.001, 0.1))
@@ -115,9 +123,9 @@ def build_bounds(n_free_upper: int, n_free_lower: int) -> list[tuple[float | Non
     bounds.append((-0.3, -0.001))
 
     for _ in range(n_free_upper):
-        bounds.extend([(None, None), (None, None)])
+        bounds.extend([(0.0, 1.0), (None, None)])
     for _ in range(n_free_lower):
-        bounds.extend([(None, None), (None, None)])
+        bounds.extend([(0.0, 1.0), (None, None)])
 
     return bounds
 

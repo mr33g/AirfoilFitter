@@ -30,13 +30,24 @@ MIN_CP_NEIGHBOR_DISTANCE: float = 1.0e-3
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000
 FIT_ERROR_OBJECTIVE: str = "msr"
-KNOT_INSERTION_STRATEGY: str = "adaptive"  # "adaptive" or "midspan"
+KNOT_INSERTION_STRATEGY: str = "midspan"  # "adaptive" or "midspan"
+
+# Input repaneling samples normalized fit data from the temporary cubic spline
+# that is already used for real-leading-edge detection. The defaults mirror
+# AirfoilEditor's matching target repaneling: 100 total panels, LE bunch 0.85,
+# TE bunch 0.3.
+ENABLE_INPUT_REPANELING: bool = True
+INPUT_REPANEL_POINTS_PER_SURFACE: int = 51  # <= 0 keeps the original side counts
+INPUT_REPANEL_LE_BUNCH: float = 0.85
+INPUT_REPANEL_TE_BUNCH: float = 0.3
 
 # Plot sampling settings
 # Curvature-adaptive sampling improves visual smoothness near the leading edge
 # while keeping performance reasonable.
 PLOT_POINTS_PER_SURFACE: int = 500
 PLOT_CURVATURE_WEIGHT: float = 0.85  # 0 = uniform, 1 = fully curvature-driven
+SHOW_CP_FOURTH_DIFFERENCES: bool = True
+CP_FOURTH_DIFF_MAX_PLOT_LENGTH: float = 0.040  # chord fraction for largest displayed D4 vector
 
 # Curvature comb UI ranges
 # Old max density (100) becomes the new minimum. Allow much denser combs.
@@ -49,6 +60,13 @@ COMB_SCALE_DEFAULT: float = 0.020  # Reduced from 0.050 for better initial viewp
 # Number of points used for trailing edge vector calculations
 # Higher numbers provide more robust tangent estimates but may be less sensitive to local geometry
 DEFAULT_TE_VECTOR_POINTS: int = 2
+
+# Soft TE handle quality penalty. It gently prefers the last free control point
+# to form a reasonable handle direction and length with the trailing edge.
+ENABLE_SOFT_TE_HANDLE_QUALITY: bool = True
+DEFAULT_TE_HANDLE_QUALITY_WEIGHT: float = 0.05
+TE_HANDLE_MIN_LENGTH: float = 0.040
+TE_HANDLE_SHORT_LENGTH_WEIGHT: float = 0.25
 
 
 USER_CONFIG_FILENAME = "airfoilfitter.config.json"

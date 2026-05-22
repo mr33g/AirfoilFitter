@@ -22,6 +22,7 @@ KEY_BSPLINE_CONTROL_POINTS = "B-spline Control Points"
 KEY_BSPLINE_KNOT_MARKERS = "B-spline Knot Markers"
 KEY_BSPLINE_COMB = "B-spline Curvature Comb"
 KEY_BSPLINE_COMB_TIPS = "B-spline Comb Tips Polyline"
+KEY_BSPLINE_CP_D4 = "B-spline CP 4th Differences"
 KEY_TE_TANGENT_UPPER = "TE Tangent (Upper)"
 KEY_TE_TANGENT_LOWER = "TE Tangent (Lower)"
 KEY_BSPLINE_ERROR_TEXT = "B-spline Error Text"
@@ -73,6 +74,7 @@ class AirfoilPlotWidget(pg.PlotWidget):
         bspline_is_blunt=False,
         bspline_num_cp_upper=None,
         bspline_num_cp_lower=None,
+        bspline_fourth_difference_data=None,
     ):
         """Render current airfoil and optional B-spline layers."""
         palette = self._build_palette()
@@ -89,6 +91,7 @@ class AirfoilPlotWidget(pg.PlotWidget):
             palette,
         )
         self._plot_curvature_comb(comb_bspline, palette)
+        self._plot_control_point_fourth_differences(bspline_fourth_difference_data, palette)
         self._plot_te_tangent_vectors(
             upper_data,
             lower_data,
@@ -132,6 +135,10 @@ class AirfoilPlotWidget(pg.PlotWidget):
             "control_blunt_pen": pg.mkPen((148, 0, 211), width=1.5),
             "knot_pen": pg.mkPen((255, 215, 0), width=1.5),
             "knot_brush": pg.mkBrush((255, 215, 0, 220)),
+            "cp_d4_upper": pg.mkPen((255, 140, 0), width=2.0),
+            "cp_d4_lower": pg.mkPen((0, 220, 180), width=2.0),
+            "cp_d4_upper_brush": pg.mkBrush((255, 140, 0, 230)),
+            "cp_d4_lower_brush": pg.mkBrush((0, 220, 180, 230)),
         }
 
     def _reset_plot_canvas(self) -> None:
@@ -312,6 +319,55 @@ class AirfoilPlotWidget(pg.PlotWidget):
             lambda: tips_item.setVisible(main_item.isVisible())
         )
         tips_item.setVisible(main_item.isVisible())
+
+    def _plot_control_point_fourth_differences(self, fourth_difference_data, palette: dict[str, object]) -> None:
+        if not fourth_difference_data:
+            return
+        surfaces = fourth_difference_data.get("surfaces", {})
+        if not surfaces:
+            return
+
+        self.plot_items[KEY_BSPLINE_CP_D4] = []
+        linked_items = []
+
+        for surface_name in ("upper", "lower"):
+            surface_data = surfaces.get(surface_name)
+            if not surface_data:
+                continue
+            segments = np.asarray(surface_data.get("segments", []), dtype=float)
+            anchors = np.asarray(surface_data.get("anchors", []), dtype=float)
+            if segments.size == 0 or anchors.size == 0:
+                continue
+
+            pen = palette["cp_d4_upper"] if surface_name == "upper" else palette["cp_d4_lower"]
+            brush = palette["cp_d4_upper_brush"] if surface_name == "upper" else palette["cp_d4_lower_brush"]
+            label = KEY_BSPLINE_CP_D4 if surface_name == "upper" else None
+
+            segment_item = self.plot(
+                segments[:, 0],
+                segments[:, 1],
+                pen=pen,
+                connect="pairs",
+                name=label,
+            )
+            anchor_item = self.plot(
+                anchors[:, 0],
+                anchors[:, 1],
+                pen=None,
+                symbol="t",
+                symbolSize=9,
+                symbolBrush=brush,
+                symbolPen=pen,
+            )
+            self._register_item(KEY_BSPLINE_CP_D4, segment_item, is_group=True)
+            self._register_item(KEY_BSPLINE_CP_D4, anchor_item, is_group=True)
+            linked_items.append((segment_item, anchor_item))
+
+        for segment_item, anchor_item in linked_items:
+            segment_item.visibleChanged.connect(
+                lambda item=segment_item, marker=anchor_item: marker.setVisible(item.isVisible())
+            )
+            anchor_item.setVisible(segment_item.isVisible())
 
     def _plot_te_tangent_vectors(
         self,

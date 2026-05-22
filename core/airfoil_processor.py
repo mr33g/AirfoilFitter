@@ -35,7 +35,6 @@ class AirfoilProcessor(QObject):
         self.upper_te_tangent_vector = None
         self.lower_te_tangent_vector = None
         self._last_plot_data = None # Cache for the last plot data dictionary
-        self._current_te_vector_points = None  # Store current TE vector points setting
         self._is_blunt_TE = False # True if original airfoil has thickened TE
 
 
@@ -80,41 +79,6 @@ class AirfoilProcessor(QObject):
 
         self.emit_plot_update()
 
-    def recalculate_te_vectors_and_update_plot(self, te_vector_points):
-        """
-        Recalculate the trailing edge tangent vectors using the specified number of points
-        and update the plot.
-        """
-        if self.upper_data is None or self.lower_data is None:
-            self.log_message.emit("Error: No airfoil data loaded. Cannot recalculate TE vectors.")
-            return
-        
-        upper_te_tangent_vector, lower_te_tangent_vector = self._calculate_te_tangent(
-            self.upper_data, self.lower_data, te_vector_points
-        )
-        # Update the stored TE tangent vectors
-        self.upper_te_tangent_vector = upper_te_tangent_vector
-        self.lower_te_tangent_vector = lower_te_tangent_vector
-        
-        self.emit_plot_update()
-        self.log_message.emit(f"Trailing edge vectors recalculated with {te_vector_points} points.")
-
-    def recalculate_te_vectors(self, te_vector_points: int) -> None:
-        """
-        Recalculate the trailing edge tangent vectors using the specified number of points.
-        Does NOT update the plot - use this when you want to update TE vectors but
-        preserve an existing B-spline fit on the plot.
-        """
-        if self.upper_data is None or self.lower_data is None:
-            return
-        
-        upper_te_tangent_vector, lower_te_tangent_vector = self._calculate_te_tangent(
-            self.upper_data, self.lower_data, te_vector_points
-        )
-        # Update the stored TE tangent vectors
-        self.upper_te_tangent_vector = upper_te_tangent_vector
-        self.lower_te_tangent_vector = lower_te_tangent_vector
-
     def update_plot(self) -> None:
         """Request a plot update with the current airfoil data (without B-spline)."""
         self._request_plot_update()
@@ -147,6 +111,11 @@ class AirfoilProcessor(QObject):
                 'bspline_is_blunt': not bspline_processor.is_sharp_te,
                 'bspline_num_cp_upper': bspline_processor.num_cp_upper,
                 'bspline_num_cp_lower': bspline_processor.num_cp_lower,
+                'bspline_fourth_difference_data': (
+                    bspline_processor.calculate_control_point_fourth_difference_data()
+                    if bool(getattr(config, "SHOW_CP_FOURTH_DIFFERENCES", False))
+                    else None
+                ),
             }
         )
 

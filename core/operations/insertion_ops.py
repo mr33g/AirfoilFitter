@@ -195,7 +195,6 @@ def refit_after_knot_insertion(proc) -> bool:
     cp_counts = (proc.num_cp_upper, proc.num_cp_lower)
     upper_te_dir = None if getattr(proc, "upper_te_dir", None) is None else np.asarray(proc.upper_te_dir, dtype=float).copy()
     lower_te_dir = None if getattr(proc, "lower_te_dir", None) is None else np.asarray(proc.lower_te_dir, dtype=float).copy()
-    enforce_te_tangency = bool(getattr(proc, "enforce_te_tangency", False))
     if proc.enforce_g2:
         success = proc._fit_with_g2_optimization(
             proc.upper_original_data,
@@ -203,9 +202,9 @@ def refit_after_knot_insertion(proc) -> bool:
             cp_counts,
             upper_te_dir=upper_te_dir,
             lower_te_dir=lower_te_dir,
-            enforce_te_tangency=enforce_te_tangency,
             use_existing_knot_vectors=True,
             warm_start_from_current=True,
+            use_insertion_solver_settings=True,
         )
         if not success:
             proc._fit_g1_independent(
@@ -214,7 +213,6 @@ def refit_after_knot_insertion(proc) -> bool:
                 cp_counts,
                 upper_te_dir=upper_te_dir,
                 lower_te_dir=lower_te_dir,
-                enforce_te_tangency=enforce_te_tangency,
                 use_existing_knot_vectors=True,
             )
     else:
@@ -224,7 +222,6 @@ def refit_after_knot_insertion(proc) -> bool:
             cp_counts,
             upper_te_dir=upper_te_dir,
             lower_te_dir=lower_te_dir,
-            enforce_te_tangency=enforce_te_tangency,
             use_existing_knot_vectors=True,
         )
     final_error = pure_fit_total()

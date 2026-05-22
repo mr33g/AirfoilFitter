@@ -30,7 +30,6 @@ def fit_bspline(
     lower_te_tangent_vector: np.ndarray | None = None,
     enforce_g2: bool = False,
     enforce_g3: bool = False,
-    enforce_te_tangency: bool = True,
     preserve_existing_knots: bool = False,
 ) -> bool:
     """Fit B-splines with G1 and optional G2/G3 constraints at leading edge."""
@@ -50,8 +49,6 @@ def fit_bspline(
         proc.degree_upper = proc.degree
         proc.degree_lower = proc.degree
         proc.last_insertion_info = None
-        proc.enforce_te_tangency = bool(enforce_te_tangency)
-
         proc.is_sharp_te = not is_thickened
 
         le_point = (upper_data[0] + lower_data[0]) / 2
@@ -90,7 +87,6 @@ def fit_bspline(
                 (proc.num_cp_upper, proc.num_cp_lower),
                 upper_te_dir,
                 lower_te_dir,
-                enforce_te_tangency,
                 use_existing_knot_vectors=can_reuse_existing_knots,
                 warm_start_from_current=can_reuse_existing_knots,
             )
@@ -105,7 +101,7 @@ def fit_bspline(
                 (proc.num_cp_upper, proc.num_cp_lower),
                 upper_te_dir,
                 lower_te_dir,
-                enforce_te_tangency,
+                enable_soft_te_handle_quality=True,
                 use_existing_knot_vectors=can_reuse_existing_knots,
             )
 
@@ -117,9 +113,6 @@ def fit_bspline(
         proc.num_cp_lower = len(proc.lower_control_points)
 
         proc._validate_continuity()
-        if upper_te_dir is not None and lower_te_dir is not None and enforce_te_tangency:
-            proc._validate_trailing_edge_tangents(upper_te_dir, lower_te_dir)
-
         return True
 
     except Exception as exc:
@@ -135,12 +128,13 @@ def fit_with_g2_optimization(
     num_control_points: int | tuple[int, int],
     upper_te_dir: np.ndarray | None,
     lower_te_dir: np.ndarray | None,
-    enforce_te_tangency: bool = True,
     use_existing_knot_vectors: bool = False,
     warm_start_from_current: bool = False,
+    use_insertion_solver_settings: bool = False,
 ) -> bool:
     """Fit both surfaces with G2 continuity using constrained optimization."""
     _ = num_control_points
+    enable_soft_te_handle_quality = True
     te_point_upper = upper_data[-1]
     te_point_lower = lower_data[-1]
 
@@ -172,8 +166,8 @@ def fit_with_g2_optimization(
             (num_cp_upper, num_cp_lower),
             upper_te_dir,
             lower_te_dir,
-            enforce_te_tangency,
-            use_existing_knot_vectors,
+            enable_soft_te_handle_quality=enable_soft_te_handle_quality,
+            use_existing_knot_vectors=use_existing_knot_vectors,
         )
     else:
         proc.upper_control_points = np.asarray(proc.upper_control_points, dtype=float).copy()
@@ -188,8 +182,7 @@ def fit_with_g2_optimization(
     layout = OptimizationLayout(num_cp_upper, num_cp_lower)
 
     num_vars = layout.num_vars
-
-    insertion_mode = bool(use_existing_knot_vectors and warm_start_from_current)
+    insertion_mode = bool(use_insertion_solver_settings)
     max_deg = max(proc.degree_upper, proc.degree_lower)
     max_iter = max(200, num_vars * 20)
     ftol = 1e-7
@@ -204,8 +197,8 @@ def fit_with_g2_optimization(
 
     if max_deg > 10:
         max_iter += (max_deg - 10) * 100
-    if enforce_te_tangency:
-        max_iter += 250
+    if enable_soft_te_handle_quality:
+        max_iter += 80
     if bool(proc.enforce_g3):
         max_iter += 300
 
@@ -228,8 +221,8 @@ def fit_with_g2_optimization(
             te_point_lower=te_point_lower,
             upper_te_dir=upper_te_dir,
             lower_te_dir=lower_te_dir,
-            enforce_te_tangency=enforce_te_tangency,
-            smoothing_weight=proc.smoothing_weight,
+            enable_soft_te_handle_quality=enable_soft_te_handle_quality,
+            smoothing_weight=float(proc.smoothing_weight),
             initial_vars=np.asarray(start_vars, dtype=float),
             layout=layout,
             vars_to_control_points_fn=lambda x: vars_to_control_points(x, num_cp_upper, num_cp_lower),
@@ -241,15 +234,15 @@ def fit_with_g2_optimization(
     basis_upper = bspline_helper.build_basis_matrix(u_params_upper, proc.upper_knot_vector, proc.degree_upper)
     basis_lower = bspline_helper.build_basis_matrix(u_params_lower, proc.lower_knot_vector, proc.degree_lower)
     problem = build_problem(pure_metric, initial_vars, basis_upper, basis_lower)
-    constraints = problem["constraints"]
-    bounds = problem["bounds"]
+    initial_diag = dict(problem["evaluate_diagnostics"](initial_vars))
+
     result = optimize.minimize(
         problem["objective"],
         problem["initial_vars"],
         method="SLSQP",
         jac=problem["objective_jac"],
-        constraints=constraints,
-        bounds=bounds,
+        constraints=problem["constraints"],
+        bounds=problem["bounds"],
         options={"ftol": ftol, "maxiter": max_iter, "disp": False},
     )
     total_iterations = int(getattr(result, "nit", -1))
@@ -257,7 +250,7 @@ def fit_with_g2_optimization(
     max_constraint_violation = 0.0
     if getattr(result, "x", None) is not None:
         x_final = np.asarray(result.x, dtype=float)
-        for constraint in constraints:
+        for constraint in problem["constraints"]:
             cval = np.asarray(constraint["fun"](x_final), dtype=float).ravel()
             if cval.size:
                 ctype = str(constraint.get("type", "eq")).strip().lower()
@@ -265,20 +258,16 @@ def fit_with_g2_optimization(
                     violation = float(np.max(np.maximum(0.0, -cval)))
                 else:
                     violation = float(np.max(np.abs(cval)))
-                max_constraint_violation = max(
-                    max_constraint_violation,
-                    violation,
-                )
-    relaxed_success = (
-        int(getattr(result, "status", -1)) == 9
-        and np.isfinite(max_constraint_violation)
-        and max_constraint_violation <= 2e-5
-    )
-    accepted = bool(result.success or result.status == 0 or relaxed_success)
+                max_constraint_violation = max(max_constraint_violation, violation)
+    else:
+        x_final = np.asarray(initial_vars, dtype=float)
+
+    final_diag = dict(problem["evaluate_diagnostics"](x_final))
+    accepted = bool(result.success)
+
     proc.last_optimizer_info = {
         "success": bool(result.success),
         "accepted": accepted,
-        "accepted_via_relaxed_criteria": bool(relaxed_success),
         "status": int(result.status),
         "message": str(result.message),
         "iterations": int(total_iterations),
@@ -287,12 +276,30 @@ def fit_with_g2_optimization(
         "solver_ftol": float(ftol),
         "solver_maxiter": int(max_iter),
         "insertion_mode": bool(insertion_mode),
+        "solver_profile": "insertion" if insertion_mode else "default",
+        "smoothing_weight": float(proc.smoothing_weight),
         "fit_error_metric": str(problem.get("fit_error_metric", "unknown")),
-        "fit_error_samples": int(problem.get("fit_error_samples", -1)),
-        "fit_error_samples_coarse": int(problem.get("fit_error_samples_coarse", -1)),
-        "fit_error_samples_medium": int(problem.get("fit_error_samples_medium", -1)),
-        "fit_error_refresh_every": int(problem.get("fit_error_refresh_every", -1)),
-        "fit_error_force_full_precision": bool(problem.get("fit_error_force_full_precision", False)),
+        "initial_fit_error_total": float(initial_diag["fit_error_total"]),
+        "final_fit_error_total": float(final_diag["fit_error_total"]),
+        "initial_smoothing_penalty_total": float(initial_diag["smoothing_penalty_total"]),
+        "final_smoothing_penalty_total": float(final_diag["smoothing_penalty_total"]),
+        "final_smoothing_penalty_upper_fourth_diff": float(final_diag["smoothing_penalty_upper_fourth_diff"]),
+        "final_smoothing_penalty_lower_fourth_diff": float(final_diag["smoothing_penalty_lower_fourth_diff"]),
+        "raw_smoothing_baseline_total": float(final_diag.get("raw_smoothing_baseline_total", np.nan)),
+        "smoothing_reference_fit": float(final_diag.get("smoothing_reference_fit", np.nan)),
+        "smoothing_objective_scale": float(final_diag.get("smoothing_objective_scale", np.nan)),
+        "te_handle_weight": float(final_diag.get("te_handle_weight", np.nan)),
+        "te_handle_min_length": float(final_diag.get("te_handle_min_length", np.nan)),
+        "initial_te_handle_penalty_total": float(initial_diag.get("te_handle_penalty_total", np.nan)),
+        "final_te_handle_penalty_total": float(final_diag.get("te_handle_penalty_total", np.nan)),
+        "final_te_handle_penalty_upper_angle": float(final_diag.get("te_handle_penalty_upper_angle", np.nan)),
+        "final_te_handle_penalty_lower_angle": float(final_diag.get("te_handle_penalty_lower_angle", np.nan)),
+        "final_te_handle_penalty_upper_short_length": float(final_diag.get("te_handle_penalty_upper_short_length", np.nan)),
+        "final_te_handle_penalty_lower_short_length": float(final_diag.get("te_handle_penalty_lower_short_length", np.nan)),
+        "final_te_handle_upper_length": float(final_diag.get("te_handle_upper_length", np.nan)),
+        "final_te_handle_lower_length": float(final_diag.get("te_handle_lower_length", np.nan)),
+        "raw_te_handle_baseline_total": float(final_diag.get("raw_te_handle_baseline_total", np.nan)),
+        "te_handle_objective_scale": float(final_diag.get("te_handle_objective_scale", np.nan)),
         "mode": "g3" if bool(proc.enforce_g3) else "g2",
     }
 

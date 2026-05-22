@@ -20,7 +20,6 @@ from core.operations import (
     refit_after_knot_insertion,
     remove_te_thickening as remove_te_thickening_op,
     validate_continuity,
-    validate_trailing_edge_tangents,
 )
 from core.optimization import (
     vars_to_control_points,
@@ -63,7 +62,6 @@ class BSplineProcessor:
         self.last_lower_max_error_idx: int | None = None
         self.error_reference_available: bool = False
         self.last_insertion_info: dict | None = None
-        self.enforce_te_tangency: bool = False
         self.upper_te_dir: np.ndarray | None = None
         self.lower_te_dir: np.ndarray | None = None
         # Tight insertion-mode SLSQP settings chosen from short-set tuning.
@@ -90,7 +88,6 @@ class BSplineProcessor:
         lower_te_tangent_vector: np.ndarray | None = None,
         enforce_g2: bool = False,
         enforce_g3: bool = False,
-        enforce_te_tangency: bool = True,
         preserve_existing_knots: bool = False,
     ) -> bool:
         return fit_bspline_op(
@@ -103,7 +100,6 @@ class BSplineProcessor:
             lower_te_tangent_vector=lower_te_tangent_vector,
             enforce_g2=enforce_g2,
             enforce_g3=enforce_g3,
-            enforce_te_tangency=enforce_te_tangency,
             preserve_existing_knots=preserve_existing_knots,
         )
 
@@ -114,9 +110,9 @@ class BSplineProcessor:
         num_control_points: int | tuple[int, int],
         upper_te_dir: np.ndarray | None,
         lower_te_dir: np.ndarray | None,
-        enforce_te_tangency: bool = True,
         use_existing_knot_vectors: bool = False,
         warm_start_from_current: bool = False,
+        use_insertion_solver_settings: bool = False,
     ) -> bool:
         return fit_with_g2_optimization_op(
             self,
@@ -125,9 +121,9 @@ class BSplineProcessor:
             num_control_points,
             upper_te_dir,
             lower_te_dir,
-            enforce_te_tangency=enforce_te_tangency,
             use_existing_knot_vectors=use_existing_knot_vectors,
             warm_start_from_current=warm_start_from_current,
+            use_insertion_solver_settings=use_insertion_solver_settings,
         )
 
     def _vars_to_control_points(self, vars: np.ndarray, num_cp_upper: int, num_cp_lower: int) -> tuple[np.ndarray, np.ndarray]:
@@ -141,7 +137,7 @@ class BSplineProcessor:
         num_control_points: int | tuple[int, int],
         upper_te_dir: np.ndarray | None,
         lower_te_dir: np.ndarray | None,
-        enforce_te_tangency: bool = True,
+        enable_soft_te_handle_quality: bool = True,
         use_existing_knot_vectors: bool = False,
     ):
         return fit_g1_independent(
@@ -151,7 +147,7 @@ class BSplineProcessor:
             num_control_points,
             upper_te_dir,
             lower_te_dir,
-            enforce_te_tangency=enforce_te_tangency,
+            enable_soft_te_handle_quality=enable_soft_te_handle_quality,
             use_existing_knot_vectors=use_existing_knot_vectors,
         )
 
@@ -161,7 +157,7 @@ class BSplineProcessor:
         surface_data: np.ndarray,
         num_control_points: int,
         is_upper: bool,
-        te_tangent_vector: np.ndarray | None = None,
+        soft_te_tangent_vector: np.ndarray | None = None,
         te_point: np.ndarray | None = None
     ) -> np.ndarray:
         return fit_single_surface_g1(
@@ -170,15 +166,12 @@ class BSplineProcessor:
             surface_data,
             num_control_points,
             is_upper,
-            te_tangent_vector=te_tangent_vector,
+            soft_te_tangent_vector=soft_te_tangent_vector,
             te_point=te_point,
         )
 
     def _finalize_curves(self):
         return finalize_curves(self)
-
-    def _validate_trailing_edge_tangents(self, upper_te_dir: np.ndarray | None, lower_te_dir: np.ndarray | None) -> None:
-        return validate_trailing_edge_tangents(self, upper_te_dir, lower_te_dir)
 
     def _validate_continuity(self):
         return validate_continuity(self)
@@ -210,7 +203,6 @@ class BSplineProcessor:
         self.last_lower_max_error_idx = None
         self.error_reference_available = False
         self.last_insertion_info = None
-        self.enforce_te_tangency = False
         self.upper_te_dir = None
         self.lower_te_dir = None
         self._backup_upper_control_points = None
@@ -225,6 +217,16 @@ class BSplineProcessor:
         
         return bspline_helper.calculate_curvature_comb_data(
             self.upper_curve, self.lower_curve, num_points_per_segment, scale_factor
+        )
+
+    def calculate_control_point_fourth_difference_data(self):
+        """Calculate fourth finite differences of control polygons for visualization."""
+        if not self.is_fitted():
+            return None
+        return bspline_helper.calculate_control_point_fourth_difference_data(
+            self.upper_control_points,
+            self.lower_control_points,
+            max_plot_length=float(getattr(config, "CP_FOURTH_DIFF_MAX_PLOT_LENGTH", 0.040)),
         )
 
     def apply_te_thickening(self, te_thickness: float) -> bool:

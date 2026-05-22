@@ -4,8 +4,8 @@ import numpy as np
 from scipy import optimize
 
 from core import config
-from core.optimization.control_point_mapping import smoothing_weights
 from core.optimization.fit_metrics import vertical_distance_and_grad
+from core.optimization.te_handle_quality import te_handle_quality_penalty_and_grad
 from utils import bspline_helper
 
 
@@ -30,15 +30,71 @@ def _unpack_control_points(vars_flat: np.ndarray, num_cp: int) -> np.ndarray:
     return np.column_stack((x, y))
 
 
+def _fourth_difference_weights(num_control_points: int) -> np.ndarray:
+    if num_control_points <= 4:
+        return np.zeros(0, dtype=float)
+    idx = np.arange(num_control_points - 4, dtype=float)
+    grad = (
+        0.5 + 1.5 * (idx / (num_control_points - 5))
+        if num_control_points > 5
+        else np.ones(num_control_points - 4, dtype=float)
+    )
+    return grad * grad
+
+
+def _fourth_difference_penalty_and_grad(
+    cp: np.ndarray,
+    weights: np.ndarray,
+    smoothing_weight: float,
+) -> tuple[float, np.ndarray]:
+    grad = np.zeros_like(cp, dtype=float)
+    if weights.size == 0 or len(cp) < 5 or smoothing_weight == 0.0:
+        return 0.0, grad
+
+    penalty = 0.0
+    diff = np.diff(cp, n=4, axis=0)
+    for i, w in enumerate(weights):
+        scale = float(smoothing_weight) * float(w)
+        if scale <= 0.0:
+            continue
+        d4 = diff[i]
+        penalty += scale * float(np.dot(d4, d4))
+        grad_d4 = 2.0 * scale * d4
+        grad[i] += grad_d4
+        grad[i + 1] -= 4.0 * grad_d4
+        grad[i + 2] += 6.0 * grad_d4
+        grad[i + 3] -= 4.0 * grad_d4
+        grad[i + 4] += grad_d4
+    return penalty, grad
+
+
+def _scaled_te_handle_penalty_and_grad(
+    cp: np.ndarray,
+    target_direction: np.ndarray | None,
+    scale: float,
+) -> tuple[float, np.ndarray, dict[str, float]]:
+    raw_penalty, raw_grad, parts = te_handle_quality_penalty_and_grad(
+        cp,
+        target_direction,
+        min_length=float(getattr(config, "TE_HANDLE_MIN_LENGTH", 0.040)),
+        short_length_weight=float(getattr(config, "TE_HANDLE_SHORT_LENGTH_WEIGHT", 0.25)),
+    )
+    if scale == 0.0:
+        return 0.0, np.zeros_like(raw_grad, dtype=float), parts
+    return float(scale * raw_penalty), scale * raw_grad, {
+        key: float(scale * value) if key != "length" else float(value)
+        for key, value in parts.items()
+    }
+
+
 def _build_linear_g1_guess(
     proc,
     basis_matrix: np.ndarray,
     surface_data: np.ndarray,
     num_control_points: int,
-    te_tangent_vector: np.ndarray | None,
     te_point: np.ndarray | None,
 ) -> np.ndarray:
-    """Legacy constrained least-squares initializer."""
+    """Constrained least-squares initializer for endpoint/G1 conditions."""
     A_data = np.zeros((2 * len(surface_data), 2 * num_control_points))
     b_data = np.zeros(2 * len(surface_data))
 
@@ -66,15 +122,6 @@ def _build_linear_g1_guess(
     constraints.append(row)
     constraint_rhs.append(0.0)
 
-    if te_tangent_vector is not None:
-        row = np.zeros(2 * num_control_points)
-        row[num_control_points - 1] = -te_tangent_vector[1]
-        row[2 * num_control_points - 1] = te_tangent_vector[0]
-        row[num_control_points - 2] = te_tangent_vector[1]
-        row[2 * num_control_points - 2] = -te_tangent_vector[0]
-        constraints.append(row)
-        constraint_rhs.append(0.0)
-
     if te_point is not None:
         row_x = np.zeros(2 * num_control_points)
         row_x[num_control_points - 1] = 1.0
@@ -90,20 +137,26 @@ def _build_linear_g1_guess(
     A_constraints = np.array(constraints) * constraint_weight
     b_constraints = np.array(constraint_rhs) * constraint_weight
 
-    A_smoothing = np.zeros(((num_control_points - 2) * 2, 2 * num_control_points))
-    b_smoothing = np.zeros((num_control_points - 2) * 2)
+    num_d4 = max(0, num_control_points - 4)
+    A_smoothing = np.zeros((num_d4 * 2, 2 * num_control_points))
+    b_smoothing = np.zeros(num_d4 * 2)
 
-    for i in range(num_control_points - 2):
-        gradient = 0.5 + 1.5 * (i / (num_control_points - 3)) if num_control_points > 3 else 1.0
+    for i in range(num_d4):
+        gradient = 0.5 + 1.5 * (i / (num_d4 - 1)) if num_d4 > 1 else 1.0
         current_weight = proc.smoothing_weight * gradient
 
         A_smoothing[i, i] = current_weight
-        A_smoothing[i, i + 1] = -2 * current_weight
-        A_smoothing[i, i + 2] = current_weight
+        A_smoothing[i, i + 1] = -4 * current_weight
+        A_smoothing[i, i + 2] = 6 * current_weight
+        A_smoothing[i, i + 3] = -4 * current_weight
+        A_smoothing[i, i + 4] = current_weight
 
-        A_smoothing[i + (num_control_points - 2), num_control_points + i] = current_weight
-        A_smoothing[i + (num_control_points - 2), num_control_points + i + 1] = -2 * current_weight
-        A_smoothing[i + (num_control_points - 2), num_control_points + i + 2] = current_weight
+        y_row = i + num_d4
+        A_smoothing[y_row, num_control_points + i] = current_weight
+        A_smoothing[y_row, num_control_points + i + 1] = -4 * current_weight
+        A_smoothing[y_row, num_control_points + i + 2] = 6 * current_weight
+        A_smoothing[y_row, num_control_points + i + 3] = -4 * current_weight
+        A_smoothing[y_row, num_control_points + i + 4] = current_weight
 
     A_all = np.vstack([A_data, A_constraints, A_smoothing])
     b_all = np.hstack([b_data, b_constraints, b_smoothing])
@@ -112,7 +165,6 @@ def _build_linear_g1_guess(
 
 def _build_linear_constraints(
     num_control_points: int,
-    te_tangent_vector: np.ndarray | None,
     te_point: np.ndarray | None,
     enforce_monotonic_x: bool = False,
 ) -> list[dict]:
@@ -152,14 +204,6 @@ def _build_linear_constraints(
     row[1] = 1.0
     add_linear_eq(row, 0.0)
 
-    if te_tangent_vector is not None:
-        row = np.zeros(2 * num_control_points, dtype=float)
-        row[num_control_points - 1] = -te_tangent_vector[1]
-        row[2 * num_control_points - 1] = te_tangent_vector[0]
-        row[num_control_points - 2] = te_tangent_vector[1]
-        row[2 * num_control_points - 2] = -te_tangent_vector[0]
-        add_linear_eq(row, 0.0)
-
     if te_point is not None:
         row = np.zeros(2 * num_control_points, dtype=float)
         row[num_control_points - 1] = 1.0
@@ -186,7 +230,7 @@ def fit_g1_independent(
     num_control_points: int | tuple[int, int],
     upper_te_dir: np.ndarray | None,
     lower_te_dir: np.ndarray | None,
-    enforce_te_tangency: bool = True,
+    enable_soft_te_handle_quality: bool = True,
     use_existing_knot_vectors: bool = False,
 ) -> None:
     """Fit surfaces independently with G1 constraint only."""
@@ -216,7 +260,7 @@ def fit_g1_independent(
         upper_data,
         num_control_points_upper,
         is_upper=True,
-        te_tangent_vector=upper_te_dir if enforce_te_tangency else None,
+        soft_te_tangent_vector=upper_te_dir if enable_soft_te_handle_quality else None,
         te_point=te_point_upper,
     )
     proc.lower_control_points = fit_single_surface_g1(
@@ -225,14 +269,13 @@ def fit_g1_independent(
         lower_data,
         num_control_points_lower,
         is_upper=False,
-        te_tangent_vector=lower_te_dir if enforce_te_tangency else None,
+        soft_te_tangent_vector=lower_te_dir if enable_soft_te_handle_quality else None,
         te_point=te_point_lower,
     )
     pure_metric = _resolve_pure_fit_error_metric()
     proc.last_optimizer_info = {
         "success": True,
         "accepted": True,
-        "accepted_via_relaxed_criteria": False,
         "status": 0,
         "message": (
             "G1 independent fit solved with MSR objective."
@@ -247,6 +290,8 @@ def fit_g1_independent(
         "insertion_mode": bool(use_existing_knot_vectors),
         "fit_error_metric": pure_metric,
         "fit_error_samples": -1,
+        "te_handle_weight": float(getattr(config, "DEFAULT_TE_HANDLE_QUALITY_WEIGHT", np.nan)),
+        "te_handle_min_length": float(getattr(config, "TE_HANDLE_MIN_LENGTH", np.nan)),
         "mode": "g1_independent",
     }
 
@@ -257,10 +302,10 @@ def fit_single_surface_g1(
     surface_data: np.ndarray,
     num_control_points: int,
     is_upper: bool,
-    te_tangent_vector: np.ndarray | None = None,
+    soft_te_tangent_vector: np.ndarray | None = None,
     te_point: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Fit single surface with G1/TE constraints and the selected fit objective."""
+    """Fit single surface with G1/endpoint constraints and the selected fit objective."""
     knot_vector = proc.upper_knot_vector if is_upper else proc.lower_knot_vector
     degree = proc.degree_upper if is_upper else proc.degree_lower
     if knot_vector is None:
@@ -271,12 +316,14 @@ def fit_single_surface_g1(
         basis_matrix,
         surface_data,
         num_control_points,
-        te_tangent_vector,
         te_point,
     )
     x0 = np.asarray(linear_guess, dtype=float)
 
-    smooth_w = smoothing_weights(num_control_points) * (float(proc.smoothing_weight) ** 2)
+    smooth_w = _fourth_difference_weights(num_control_points)
+    smoothing_weight = float(proc.smoothing_weight)
+    te_handle_weight = float(getattr(config, "DEFAULT_TE_HANDLE_QUALITY_WEIGHT", 0.0))
+    te_handle_enabled = bool(getattr(config, "ENABLE_SOFT_TE_HANDLE_QUALITY", False)) and te_handle_weight > 0.0
     vertical_eval_state: dict[str, np.ndarray | float | None] = {
         "x": None,
         "error": None,
@@ -302,13 +349,32 @@ def fit_single_surface_g1(
         vertical_eval_state["grad"] = grad_cp
         vertical_eval_state["u"] = solved_u
 
+    def fit_error_for_scaling(cp: np.ndarray, vars_flat: np.ndarray) -> float:
+        if _resolve_pure_fit_error_metric() == "vertical":
+            ensure_vertical_eval(vars_flat, cp)
+            return float(vertical_eval_state["error"])
+        fitted = basis_matrix @ cp
+        residual = fitted - surface_data
+        return float(np.sum(residual * residual))
+
+    cp0 = _unpack_control_points(x0, num_control_points)
+    raw_te0, _, _ = te_handle_quality_penalty_and_grad(
+        cp0,
+        soft_te_tangent_vector if te_handle_enabled else None,
+        min_length=float(getattr(config, "TE_HANDLE_MIN_LENGTH", 0.040)),
+        short_length_weight=float(getattr(config, "TE_HANDLE_SHORT_LENGTH_WEIGHT", 0.25)),
+    )
+    fit_ref = max(fit_error_for_scaling(cp0, x0), 1e-6)
+    te_handle_scale = te_handle_weight * fit_ref / raw_te0 if raw_te0 > 1e-16 and te_handle_enabled else 0.0
+
     def objective_vertical(vars_flat: np.ndarray) -> float:
         cp = _unpack_control_points(vars_flat, num_control_points)
         ensure_vertical_eval(vars_flat, cp)
         error = float(vertical_eval_state["error"])
-        if smooth_w.size:
-            diff = np.diff(cp, n=2, axis=0)
-            error += float(np.sum((diff ** 2) * smooth_w[:, np.newaxis]))
+        penalty, _ = _fourth_difference_penalty_and_grad(cp, smooth_w, smoothing_weight)
+        error += penalty
+        te_penalty, _, _ = _scaled_te_handle_penalty_and_grad(cp, soft_te_tangent_vector, te_handle_scale)
+        error += te_penalty
         return error
 
     def objective_vertical_jac(vars_flat: np.ndarray) -> np.ndarray:
@@ -316,13 +382,10 @@ def fit_single_surface_g1(
         ensure_vertical_eval(vars_flat, cp)
         grad_cp = np.asarray(vertical_eval_state["grad"], dtype=float).copy()
 
-        if smooth_w.size:
-            diff = np.diff(cp, n=2, axis=0)
-            for i, w in enumerate(smooth_w):
-                scale = 2.0 * float(w)
-                grad_cp[i] += scale * diff[i]
-                grad_cp[i + 1] += -2.0 * scale * diff[i]
-                grad_cp[i + 2] += scale * diff[i]
+        _, smooth_grad = _fourth_difference_penalty_and_grad(cp, smooth_w, smoothing_weight)
+        grad_cp += smooth_grad
+        _, te_grad, _ = _scaled_te_handle_penalty_and_grad(cp, soft_te_tangent_vector, te_handle_scale)
+        grad_cp += te_grad
 
         return _pack_control_points(grad_cp)
 
@@ -331,9 +394,10 @@ def fit_single_surface_g1(
         fitted = basis_matrix @ cp
         residual = fitted - surface_data
         error = float(np.sum(residual * residual))
-        if smooth_w.size:
-            diff = np.diff(cp, n=2, axis=0)
-            error += float(np.sum((diff ** 2) * smooth_w[:, np.newaxis]))
+        penalty, _ = _fourth_difference_penalty_and_grad(cp, smooth_w, smoothing_weight)
+        error += penalty
+        te_penalty, _, _ = _scaled_te_handle_penalty_and_grad(cp, soft_te_tangent_vector, te_handle_scale)
+        error += te_penalty
         return error
 
     def objective_msr_jac(vars_flat: np.ndarray) -> np.ndarray:
@@ -341,19 +405,15 @@ def fit_single_surface_g1(
         fitted = basis_matrix @ cp
         residual = fitted - surface_data
         grad_cp = 2.0 * (basis_matrix.T @ residual)
-        if smooth_w.size:
-            diff = np.diff(cp, n=2, axis=0)
-            for i, w in enumerate(smooth_w):
-                scale = 2.0 * float(w)
-                grad_cp[i] += scale * diff[i]
-                grad_cp[i + 1] += -2.0 * scale * diff[i]
-                grad_cp[i + 2] += scale * diff[i]
+        _, smooth_grad = _fourth_difference_penalty_and_grad(cp, smooth_w, smoothing_weight)
+        grad_cp += smooth_grad
+        _, te_grad, _ = _scaled_te_handle_penalty_and_grad(cp, soft_te_tangent_vector, te_handle_scale)
+        grad_cp += te_grad
         return _pack_control_points(grad_cp)
 
     pure_metric = _resolve_pure_fit_error_metric()
     constraints = _build_linear_constraints(
         num_control_points,
-        te_tangent_vector,
         te_point,
         enforce_monotonic_x=(pure_metric == "vertical"),
     )

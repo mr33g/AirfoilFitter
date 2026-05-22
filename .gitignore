@@ -12,3 +12,4 @@ __pycache__/
 *cwd
 setup/windows/Files.wxs
 airfoilfitter.config.json
+debug.log

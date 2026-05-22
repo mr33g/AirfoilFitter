@@ -9,5 +9,5 @@ from .insertion_ops import (
     refine_curves_with_surface_knots,
     refit_after_knot_insertion,
 )
-from .model_ops import finalize_curves, validate_continuity, validate_trailing_edge_tangents
+from .model_ops import finalize_curves, validate_continuity
 from .te_ops import apply_te_thickening, remove_te_thickening

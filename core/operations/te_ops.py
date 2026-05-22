@@ -49,7 +49,7 @@ def apply_te_thickening(proc, te_thickness: float) -> bool:
             (proc.num_cp_upper, proc.num_cp_lower),
             upper_te_dir=None,
             lower_te_dir=None,
-            enforce_te_tangency=False,
+            enable_soft_te_handle_quality=False,
         )
 
         proc.is_sharp_te = False

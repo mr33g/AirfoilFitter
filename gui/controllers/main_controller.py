@@ -13,7 +13,6 @@ from core.airfoil_processor import AirfoilProcessor
 from gui.main_window import MainWindow
 
 from .file_controller import FileController
-from .optimization_controller import OptimizationController
 from .ui_state_controller import UIStateController
 from .bspline_controller import BSplineController
 
@@ -30,7 +29,6 @@ class MainController(QObject):
         # Initialize sub-controllers
         self.ui_state_controller = UIStateController(self.processor, self.window)
         self.file_controller = FileController(self.processor, self.window, self.ui_state_controller)
-        self.optimization_controller = OptimizationController(self.processor, self.window, self.ui_state_controller)
         self.bspline_controller = BSplineController(self.processor, self.window)
         
         # Store B-spline controller in window for access by other controllers
@@ -72,16 +70,11 @@ class MainController(QObject):
         
         # Parameter changes that trigger re-fit (only if already fitted)
         opt.bspline_degree_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
-        opt.smoothness_penalty_spin.valueChanged.connect(self.bspline_controller.refit_if_fitted)
+        opt.smoothness_penalty_slider.sliderReleased.connect(self.bspline_controller.refit_smoothing_full)
         opt.fit_objective_combo.currentIndexChanged.connect(self.bspline_controller.refit_if_fitted)
         opt.g2_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         opt.g3_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
-        opt.enforce_te_tangency_checkbox.toggled.connect(self.bspline_controller.refit_if_fitted)
         
-        # TE vector points dropdown - always updates TE vectors, refits only if tangency enabled and fitted
-        opt.te_vector_points_combo.currentIndexChanged.connect(self.bspline_controller.handle_te_vector_points_changed)
-
-
         # Airfoil settings
         airfoil = self.window.airfoil_settings_panel
         airfoil.toggle_thickening_button.clicked.connect(self.ui_state_controller.handle_toggle_thickening)

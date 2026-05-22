@@ -21,7 +21,6 @@ class UIStateController:
         self._default_comb_scale = config.COMB_SCALE_DEFAULT
         self._default_comb_density = config.COMB_DENSITY_DEFAULT
         self._default_bspline_cp = 10  # Default control points
-        self._default_te_vector_points = config.DEFAULT_TE_VECTOR_POINTS
         # Store initial thickness from input data
         self._initial_thickness_mm: float = 0.0
 

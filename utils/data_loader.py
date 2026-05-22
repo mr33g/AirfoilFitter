@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.interpolate import CubicSpline
 
+from core import config
+
 def _remove_consecutive_duplicates(points: np.ndarray, tol: float = 1e-12) -> np.ndarray:
     if len(points) == 0:
         return points
@@ -23,7 +25,7 @@ def _build_contour_from_surfaces(upper_surface: np.ndarray, lower_surface: np.nd
         lower_part = lower_surface
     return np.vstack([upper_te_to_le, lower_part])
 
-def _find_real_le_on_spline(contour: np.ndarray, logger_func=print) -> tuple[np.ndarray, int]:
+def _build_cubic_contour_spline(contour: np.ndarray):
     contour = _remove_consecutive_duplicates(contour)
     if len(contour) < 4:
         raise ValueError("Not enough points to compute cubic spline for leading edge detection.")
@@ -36,7 +38,14 @@ def _find_real_le_on_spline(contour: np.ndarray, logger_func=print) -> tuple[np.
     y = contour[:, 1]
     x_spline = CubicSpline(s, x)
     y_spline = CubicSpline(s, y)
+    return contour, s, x_spline, y_spline
 
+
+def _locate_real_le_on_spline(contour: np.ndarray, logger_func=print):
+    contour, s, x_spline, y_spline = _build_cubic_contour_spline(contour)
+
+    x = contour[:, 0]
+    y = contour[:, 1]
     x_te = 0.5 * (x[0] + x[-1])
     y_te = 0.5 * (y[0] + y[-1])
 
@@ -80,8 +89,17 @@ def _find_real_le_on_spline(contour: np.ndarray, logger_func=print) -> tuple[np.
     x_le = float(x_spline(sle))
     y_le = float(y_spline(sle))
     le_point = np.array([x_le, y_le], dtype=float)
+    return contour, s, x_spline, y_spline, sle, le_point
+
+
+def _find_real_le_on_spline(contour: np.ndarray, logger_func=print) -> tuple[np.ndarray, int]:
+    contour, s, _x_spline, _y_spline, sle, le_point = _locate_real_le_on_spline(
+        contour,
+        logger_func,
+    )
 
     insert_idx = int(np.searchsorted(s, sle))
+    ds_eps = (s[-1] - s[0]) * 1.0e-10
     if insert_idx < len(s) and abs(s[insert_idx] - sle) < ds_eps:
         contour[insert_idx] = le_point
         le_index = insert_idx
@@ -103,10 +121,114 @@ def _find_real_le_on_spline(contour: np.ndarray, logger_func=print) -> tuple[np.
     contour = np.insert(contour, insert_idx, le_point, axis=0)
     logger_func(
         "Inserted real LE point from spline definition. "
-        f"Index {insert_idx}, point ({x_le:.8f}, {y_le:.8f})."
+        f"Index {insert_idx}, point ({le_point[0]:.8f}, {le_point[1]:.8f})."
     )
     le_index = insert_idx
     return contour, le_index
+
+
+def _sample_spline_side(
+    x_spline: CubicSpline,
+    y_spline: CubicSpline,
+    s_start: float,
+    s_stop: float,
+    count: int,
+    le_bunch: float,
+    te_bunch: float,
+) -> np.ndarray:
+    count = max(2, int(count))
+
+    # Mirrors AirfoilEditor's Panelling._cosine_distribution. The resulting
+    # fractions run LE->TE and are interpreted as arc-length fractions on each
+    # side of our temporary cubic contour spline.
+    le_bunch = float(np.clip(le_bunch, 0.0, 1.0))
+    te_bunch = float(np.clip(te_bunch, 0.0, 1.0))
+    ufac_start = np.clip(0.1 - le_bunch * 0.1, 0.0, 0.5)
+    beta = np.linspace(ufac_start, 0.65, count) * np.pi
+    u = (1.0 - np.cos(beta)) * 0.5
+    u = u - u[0]
+    if not np.isclose(u[-1], 0.0):
+        u = u / u[-1]
+    if te_bunch > 0.0:
+        te_exponent = 1.0 + te_bunch * 0.15
+        u = 1.0 - (1.0 - u) ** te_exponent
+    u[0] = 0.0
+    u[-1] = 1.0
+
+    s_values = s_start + (s_stop - s_start) * u
+    return np.column_stack((x_spline(s_values), y_spline(s_values)))
+
+
+def _repanel_contour_from_spline(
+    contour: np.ndarray,
+    logger_func=print,
+    points_per_surface: int | None = None,
+    le_bunch: float | None = None,
+    te_bunch: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Samples fresh LE->TE upper/lower point sets from the same cubic contour
+    spline used for real-LE detection.
+
+    The input contour order is Selig-like: upper TE -> LE -> lower TE.
+    Sampling upper therefore walks backward in spline arc length from LE to
+    the upper TE, while lower walks forward from LE to the lower TE.
+    """
+    contour, s, x_spline, y_spline, sle, le_point = _locate_real_le_on_spline(
+        contour,
+        logger_func,
+    )
+
+    le_index = int(np.searchsorted(s, sle))
+    if le_index <= 0 or le_index >= len(contour):
+        raise ValueError("Leading edge is at contour boundary; cannot repanel input.")
+
+    configured_count = (
+        config.INPUT_REPANEL_POINTS_PER_SURFACE
+        if points_per_surface is None
+        else int(points_per_surface)
+    )
+    if configured_count > 0:
+        upper_count = lower_count = configured_count
+    else:
+        upper_count = le_index + 1
+        lower_count = len(contour) - le_index
+
+    le_bunch = config.INPUT_REPANEL_LE_BUNCH if le_bunch is None else float(le_bunch)
+    te_bunch = config.INPUT_REPANEL_TE_BUNCH if te_bunch is None else float(te_bunch)
+
+    upper_surface = _sample_spline_side(
+        x_spline,
+        y_spline,
+        sle,
+        s[0],
+        upper_count,
+        le_bunch,
+        te_bunch,
+    )
+    lower_surface = _sample_spline_side(
+        x_spline,
+        y_spline,
+        sle,
+        s[-1],
+        lower_count,
+        le_bunch,
+        te_bunch,
+    )
+
+    # Keep analytically found LE and original TE endpoints exact after sampling.
+    upper_surface[0] = le_point
+    lower_surface[0] = le_point
+    upper_surface[-1] = contour[0]
+    lower_surface[-1] = contour[-1]
+
+    logger_func(
+        "Repaneled input cubic spline. "
+        f"Upper points: {len(upper_surface)}, lower points: {len(lower_surface)}, "
+        f"LE bunch: {le_bunch:.3g}, TE bunch: {te_bunch:.3g}."
+    )
+    return upper_surface, lower_surface
+
 
 def _split_contour_at_le(contour: np.ndarray, le_index: int) -> tuple[np.ndarray, np.ndarray]:
     if le_index <= 0 or le_index >= len(contour) - 1:
@@ -115,25 +237,65 @@ def _split_contour_at_le(contour: np.ndarray, le_index: int) -> tuple[np.ndarray
     lower_surface = contour[le_index:]
     return upper_surface, lower_surface
 
-def prepare_surfaces_with_real_le(upper_surface: np.ndarray, lower_surface: np.ndarray, logger_func=print) -> tuple[np.ndarray, np.ndarray]:
+def prepare_surfaces_with_real_le(
+    upper_surface: np.ndarray,
+    lower_surface: np.ndarray,
+    logger_func=print,
+    repanel: bool = False,
+    points_per_surface: int | None = None,
+    le_bunch: float | None = None,
+    te_bunch: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Builds a closed contour from upper/lower surfaces, finds the real leading edge
     using the spline-normal definition, inserts that point, and splits back into
     LE->TE ordered surfaces.
     """
     contour = _build_contour_from_surfaces(upper_surface, lower_surface)
+    if repanel:
+        return _repanel_contour_from_spline(
+            contour,
+            logger_func,
+            points_per_surface=points_per_surface,
+            le_bunch=le_bunch,
+            te_bunch=te_bunch,
+        )
     contour, le_index = _find_real_le_on_spline(contour, logger_func)
     return _split_contour_at_le(contour, le_index)
 
-def prepare_surfaces_from_selig_contour(all_coords: np.ndarray, logger_func=print) -> tuple[np.ndarray, np.ndarray]:
+def prepare_surfaces_from_selig_contour(
+    all_coords: np.ndarray,
+    logger_func=print,
+    repanel: bool = False,
+    points_per_surface: int | None = None,
+    le_bunch: float | None = None,
+    te_bunch: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Takes a Selig-style contour (TE upper -> around LE -> TE lower),
     finds/inserts the real leading edge, and splits into LE->TE surfaces.
     """
+    if repanel:
+        return _repanel_contour_from_spline(
+            all_coords,
+            logger_func,
+            points_per_surface=points_per_surface,
+            le_bunch=le_bunch,
+            te_bunch=te_bunch,
+        )
     contour, le_index = _find_real_le_on_spline(all_coords, logger_func)
     return _split_contour_at_le(contour, le_index)
 
-def normalize_airfoil_data(upper_surface, lower_surface, logger_func=print, real_le_prepared: bool = False):
+def normalize_airfoil_data(
+    upper_surface,
+    lower_surface,
+    logger_func=print,
+    real_le_prepared: bool = False,
+    repanel: bool | None = None,
+    points_per_surface: int | None = None,
+    le_bunch: float | None = None,
+    te_bunch: float | None = None,
+):
     """
     Normalizes airfoil coordinates to have a chord length of 1, with the
     leading edge at (0,0) and the trailing edge chord-line at (1,0) if appropriate.
@@ -152,7 +314,17 @@ def normalize_airfoil_data(upper_surface, lower_surface, logger_func=print, real
     """
     # Ensure LE is the real spline-defined LE and surfaces are ordered LE->TE.
     if not real_le_prepared:
-        upper_surface, lower_surface = prepare_surfaces_with_real_le(upper_surface, lower_surface, logger_func)
+        if repanel is None:
+            repanel = config.ENABLE_INPUT_REPANELING
+        upper_surface, lower_surface = prepare_surfaces_with_real_le(
+            upper_surface,
+            lower_surface,
+            logger_func,
+            repanel=repanel,
+            points_per_surface=points_per_surface,
+            le_bunch=le_bunch,
+            te_bunch=te_bunch,
+        )
 
     le_point = upper_surface[0].copy()
     te_upper = upper_surface[-1]
@@ -236,7 +408,7 @@ def normalize_airfoil_data(upper_surface, lower_surface, logger_func=print, real
 
     return upper_normalized, lower_normalized
 
-def load_airfoil_data(filename, logger_func=print):
+def load_airfoil_data(filename, logger_func=print, repanel_input: bool | None = None):
     """
     Loads airfoil coordinates from a file, supporting Selig and Lednicer .dat formats.
 
@@ -262,6 +434,8 @@ def load_airfoil_data(filename, logger_func=print):
     Raises:
         ValueError: If the file is empty or malformed.
     """
+    input_repanel = config.ENABLE_INPUT_REPANELING if repanel_input is None else bool(repanel_input)
+
     with open(filename, 'r') as f:
         # Ignore blank lines and comment lines starting with '#'.
         lines = [
@@ -347,13 +521,24 @@ def load_airfoil_data(filename, logger_func=print):
         logger_func(f"Detected Selig-like format for '{airfoil_name}'.")
         coords_str = lines[coords_start_line:]
         all_coords = np.array([list(map(float, line.split())) for line in coords_str if line])
-        upper_surface, lower_surface = prepare_surfaces_from_selig_contour(all_coords, logger_func)
+        upper_surface, lower_surface = prepare_surfaces_from_selig_contour(
+            all_coords,
+            logger_func,
+            repanel=input_repanel,
+            points_per_surface=config.INPUT_REPANEL_POINTS_PER_SURFACE,
+            le_bunch=config.INPUT_REPANEL_LE_BUNCH,
+            te_bunch=config.INPUT_REPANEL_TE_BUNCH,
+        )
     # Always normalize the data to ensure consistency.
     upper_surface, lower_surface = normalize_airfoil_data(
         upper_surface,
         lower_surface,
         logger_func,
         real_le_prepared=is_lednicer is False,
+        repanel=input_repanel,
+        points_per_surface=config.INPUT_REPANEL_POINTS_PER_SURFACE,
+        le_bunch=config.INPUT_REPANEL_LE_BUNCH,
+        te_bunch=config.INPUT_REPANEL_TE_BUNCH,
     )
 
     # Detect thickened trailing edge (symmetric about y=0)
