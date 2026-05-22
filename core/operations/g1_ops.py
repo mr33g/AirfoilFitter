@@ -10,10 +10,10 @@ from utils import bspline_helper
 
 
 def _resolve_pure_fit_error_metric() -> str:
-    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
+    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "vertical")).strip().lower()
     if metric in {"msr", "vertical"}:
         return metric
-    return "msr"
+    return "vertical"
 
 
 def _pack_control_points(cp: np.ndarray) -> np.ndarray:

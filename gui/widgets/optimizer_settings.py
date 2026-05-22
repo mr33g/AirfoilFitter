@@ -9,11 +9,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QCheckBox,
     QPushButton,
     QWidget,
-    QComboBox,
     QSpinBox,
     QSlider,
 )
@@ -101,21 +99,6 @@ class OptimizerSettingsWidget(QGroupBox):
         self.smoothness_penalty_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self._update_smoothness_label(self.smoothness_penalty_slider.value())
 
-        # Fit objective setting
-        self.fit_objective_label = QLabel("Objective:")
-        self.fit_objective_combo = QComboBox()
-        self.fit_objective_combo.addItems(["msr", "vertical"])
-        default_objective = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
-        if default_objective not in {"msr", "vertical"}:
-            default_objective = "vertical"
-        self.fit_objective_combo.setCurrentText(default_objective)
-        self.fit_objective_combo.setToolTip(
-            "Fit objective metric:\n"
-            "- msr: project term for the standard parametric least-squares residual objective; not RMS\n"
-            "- vertical: solve x(u)=x_data, then compare vertical y deviation"
-        )
-
-
         # Action buttons - make them more prominent
         self.fit_bspline_button = QPushButton("Fit B-spline")
         #self.fit_bspline_button.setMinimumHeight(25)  # Make button taller
@@ -158,13 +141,6 @@ class OptimizerSettingsWidget(QGroupBox):
         smoothness_row.addWidget(self.smoothness_penalty_value_label)
         smoothness_row.addStretch(1)
         layout.addLayout(smoothness_row)
-
-        # Objective row
-        objective_row = QHBoxLayout()
-        objective_row.addWidget(self.fit_objective_label)
-        objective_row.addWidget(self.fit_objective_combo)
-        objective_row.addStretch(1)
-        layout.addLayout(objective_row)
 
         # G2, G3 in same row
         continuity_row = QHBoxLayout()

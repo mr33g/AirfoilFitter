@@ -37,7 +37,7 @@ def build_g2_problem(
     layout: OptimizationLayout,
     vars_to_control_points_fn,
     enforce_g3: bool,
-    fit_error_metric: str = "msr",
+    fit_error_metric: str = "vertical",
 ) -> dict:
     num_cp_upper = int(layout.num_cp_upper)
     num_cp_lower = int(layout.num_cp_lower)
@@ -46,9 +46,9 @@ def build_g2_problem(
     smooth_w_upper = fourth_difference_smoothing_weights(num_cp_upper)
     smooth_w_lower = fourth_difference_smoothing_weights(num_cp_lower)
 
-    metric = str(fit_error_metric).strip()
+    metric = str(fit_error_metric).strip().lower()
     if metric not in {"msr", "vertical"}:
-        metric = "msr"
+        metric = "vertical"
 
     vertical_eval_state = {
         "last_x": None,

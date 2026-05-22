@@ -61,19 +61,6 @@ class BSplineController:
                 f"max_window=P{max_idx}..P{max_idx + 4}"
             )
 
-    def _selected_fit_objective(self) -> str:
-        """Return normalized objective selection from UI."""
-        objective_metric = str(self.window.optimizer_panel.fit_objective_combo.currentText()).strip().lower()
-        if objective_metric not in {"msr", "vertical"}:
-            objective_metric = "msr"
-        return objective_metric
-
-    def _apply_selected_fit_objective(self) -> str:
-        """Apply the UI-selected objective to runtime config and return it."""
-        objective_metric = self._selected_fit_objective()
-        config.FIT_ERROR_OBJECTIVE = objective_metric
-        return objective_metric
-
     def refit_if_fitted(self) -> None:
         """Re-fit B-spline if one is already fitted. Used for parameter changes.
         
@@ -142,9 +129,6 @@ class BSplineController:
             smoothing_weight = float(self.window.optimizer_panel.smoothness_penalty_value())
             self.bspline_processor.smoothing_weight = smoothing_weight
 
-            # Get fit objective from GUI and apply globally for the optimizer path.
-            objective_metric = self._apply_selected_fit_objective()
-            
             # Determine control point counts
             # If we're coming from an automatic refinement (knot insertion), we might have asymmetric counts
             if bool(getattr(self, "_fresh_refit_preserve_counts", False)):
@@ -180,7 +164,6 @@ class BSplineController:
                 'num_cp_lower': num_cp_lower,
                 'enforce_g2': enforce_g2,
                 'enforce_g3': enforce_g3,
-                'fit_error_objective': objective_metric,
                 'preserve_existing_knots': preserve_existing_knots,
             }
             
@@ -423,7 +406,6 @@ class BSplineController:
         opt.initial_cp_spin.setEnabled(enabled)
         opt.bspline_degree_spin.setEnabled(enabled)
         opt.smoothness_penalty_slider.setEnabled(enabled)
-        opt.fit_objective_combo.setEnabled(enabled)
         opt.g2_checkbox.setEnabled(enabled)
         opt.g3_checkbox.setEnabled(enabled and opt.g2_checkbox.isChecked())
         # Comb controls are read-only while a fit is running

@@ -135,9 +135,9 @@ class BSplineWorker(QThread):
             self.finished.emit(False, "Target curve is unavailable for knot insertion.")
             return
 
-        objective_metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip().lower()
+        objective_metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "vertical")).strip().lower()
         if objective_metric not in {"msr", "vertical"}:
-            objective_metric = "msr"
+            objective_metric = "vertical"
         insertion_strategy = str(getattr(config, "KNOT_INSERTION_STRATEGY", "adaptive")).strip().lower()
         exponent_guess = float(
             getattr(

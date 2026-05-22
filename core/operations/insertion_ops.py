@@ -156,9 +156,9 @@ def refit_after_knot_insertion(proc) -> bool:
     if proc.upper_original_data is None or proc.lower_original_data is None:
         return True
 
-    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "msr")).strip()
+    metric = str(getattr(config, "FIT_ERROR_OBJECTIVE", "vertical")).strip().lower()
     if metric not in {"msr", "vertical"}:
-        metric = "msr"
+        metric = "vertical"
     baseline_upper_cp = None if proc.upper_control_points is None else np.asarray(proc.upper_control_points, dtype=float).copy()
     baseline_lower_cp = None if proc.lower_control_points is None else np.asarray(proc.lower_control_points, dtype=float).copy()
     baseline_upper_knots = None if proc.upper_knot_vector is None else np.asarray(proc.upper_knot_vector, dtype=float).copy()

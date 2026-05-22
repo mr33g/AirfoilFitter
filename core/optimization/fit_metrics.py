@@ -282,7 +282,8 @@ def pure_surface_fit_error(
     *,
     exponent_guess: float = 0.5,
 ) -> float:
-    if metric == "vertical":
+    resolved_metric = str(metric).strip().lower()
+    if resolved_metric != "msr":
         error, _, _, _ = vertical_distance_and_grad(
             data_points,
             control_points,
