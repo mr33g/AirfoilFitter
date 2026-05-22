@@ -32,6 +32,8 @@ class AirfoilProcessor(QObject):
         # Core airfoil data
         self.upper_data = None
         self.lower_data = None
+        self.upper_display_reference_data = None
+        self.lower_display_reference_data = None
         self.upper_te_tangent_vector = None
         self.lower_te_tangent_vector = None
         self._last_plot_data = None # Cache for the last plot data dictionary
@@ -46,6 +48,8 @@ class AirfoilProcessor(QObject):
         self._last_plot_data = None
         self.upper_data = None
         self.lower_data = None
+        self.upper_display_reference_data = None
+        self.lower_display_reference_data = None
         self.upper_te_tangent_vector = None
         self.lower_te_tangent_vector = None
         self._is_blunt_TE = False
@@ -54,6 +58,7 @@ class AirfoilProcessor(QObject):
             upper, lower, airfoil_name, blunt_te = load_airfoil_data(file_path, logger_func=self.log_message.emit)
             self.upper_data = upper
             self.lower_data = lower
+            self._load_display_reference_data(file_path, upper, lower)
             self.airfoil_name = airfoil_name
             self._is_blunt_TE = blunt_te
             # Recalculate TE tangent vectors using configured default
@@ -66,6 +71,23 @@ class AirfoilProcessor(QObject):
         except Exception as e:
             self.log_message.emit(f"Failed to load or initialize airfoil data: {e}")
             return False
+
+    def _load_display_reference_data(self, file_path, fallback_upper, fallback_lower) -> None:
+        """Keep the non-repaneled normalized input as the visual reference."""
+        try:
+            upper_ref, lower_ref, _name, _blunt_te = load_airfoil_data(
+                file_path,
+                logger_func=lambda _msg: None,
+                repanel_input=False,
+            )
+            self.upper_display_reference_data = upper_ref
+            self.lower_display_reference_data = lower_ref
+        except Exception as exc:
+            self.log_message.emit(
+                f"Warning: Could not load non-repaneled visual reference: {exc}"
+            )
+            self.upper_display_reference_data = fallback_upper.copy()
+            self.lower_display_reference_data = fallback_lower.copy()
 
     def is_trailing_edge_thickened(self):
         """Returns True if the loaded airfoil has a thickened trailing edge."""
@@ -90,9 +112,15 @@ class AirfoilProcessor(QObject):
         comb_bspline=None,
     ) -> dict:
         """Build a complete plot payload from current core state and optional B-spline state."""
+        display_upper = self.upper_display_reference_data
+        display_lower = self.lower_display_reference_data
+        if display_upper is None or display_lower is None:
+            display_upper = self.upper_data
+            display_lower = self.lower_data
+
         plot_data = {
-            'upper_data': self.upper_data,
-            'lower_data': self.lower_data,
+            'upper_data': display_upper,
+            'lower_data': display_lower,
             'upper_te_tangent_vector': self.upper_te_tangent_vector,
             'lower_te_tangent_vector': self.lower_te_tangent_vector,
             'geometry_metrics': None,

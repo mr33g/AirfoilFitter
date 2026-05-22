@@ -162,8 +162,23 @@ class FileController:
             self.processor.airfoil_name = bsp_data.airfoil_name or os.path.splitext(os.path.basename(file_path))[0]
             self.processor._is_blunt_TE = not bspline_proc.is_sharp_te
 
+        display_upper_data = upper_data
+        display_lower_data = lower_data
+        if ref_dat_path is not None and has_reference_data:
+            try:
+                display_upper_data, display_lower_data, _display_name, _display_blunt = load_airfoil_data(
+                    ref_dat_path,
+                    logger_func=lambda _msg: None,
+                    repanel_input=False,
+                )
+            except Exception:
+                display_upper_data = upper_data
+                display_lower_data = lower_data
+
         self.processor.upper_data = upper_data
         self.processor.lower_data = lower_data
+        self.processor.upper_display_reference_data = display_upper_data
+        self.processor.lower_display_reference_data = display_lower_data
         self.processor._last_plot_data = None
         self.processor.upper_te_tangent_vector, self.processor.lower_te_tangent_vector = (
             self.processor._calculate_te_tangent(

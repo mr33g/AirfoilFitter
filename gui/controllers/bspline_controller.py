@@ -289,40 +289,12 @@ class BSplineController:
                 if metric is not None:
                     self.window.status_log.append(f"Fit objective metric: {metric}.")
             
-            # Calculate and display errors for each surface
-            upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
-                self.bspline_processor.upper_curve,
-                self.processor.upper_data,
-                return_max_error=True,
-            )
-            lower_sum_sq, lower_max_err, lower_max_err_idx, _ = self.calculate_bspline_fitting_error(
-                self.bspline_processor.lower_curve,
-                self.processor.lower_data,
-                return_max_error=True,
-            )
-            
-            # Store max error information for plotting
-            self.bspline_processor.last_upper_max_error = upper_max_err
-            self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
-            self.bspline_processor.last_lower_max_error = lower_max_err
-            self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
-            _ = upper_sum_sq, lower_sum_sq
-            
             # Use the degree that was actually used for fitting
             max_cp = max(num_cp_upper, num_cp_lower)
             max_deg = max(self.bspline_processor.degree_upper, self.bspline_processor.degree_lower)
             num_spans = max_cp - max_deg
             span_info = f"{num_spans} span" if num_spans == 1 else f"{num_spans} spans"
-            upper_vertical = self.calculate_bspline_vertical_error(
-                self.bspline_processor.upper_curve,
-                self.processor.upper_data,
-                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_upper", 0.5)),
-            )
-            lower_vertical = self.calculate_bspline_vertical_error(
-                self.bspline_processor.lower_curve,
-                self.processor.lower_data,
-                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
-            )
+            upper_vertical, lower_vertical = self._update_final_error_metrics()
             self.window.status_log.append(
                 f"B-spline fit OK (degrees {self.bspline_processor.degree_upper}/{self.bspline_processor.degree_lower}, {span_info}). "
                 f"Vertical max upper/lower (% chord) = "
@@ -424,6 +396,46 @@ class BSplineController:
             self.window.optimizer_panel.fit_bspline_button.setText("Reset fit")
         else:
             self.window.optimizer_panel.fit_bspline_button.setText("Fit B-spline")
+
+    def _error_reference_data(self) -> tuple[np.ndarray, np.ndarray]:
+        upper_ref = getattr(self.processor, "upper_display_reference_data", None)
+        lower_ref = getattr(self.processor, "lower_display_reference_data", None)
+        if upper_ref is None or lower_ref is None or len(upper_ref) == 0 or len(lower_ref) == 0:
+            return self.processor.upper_data, self.processor.lower_data
+        return upper_ref, lower_ref
+
+    def _update_final_error_metrics(
+        self,
+    ) -> tuple[dict, dict]:
+        upper_error_data, lower_error_data = self._error_reference_data()
+        upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
+            self.bspline_processor.upper_curve,
+            upper_error_data,
+            return_max_error=True,
+        )
+        lower_sum_sq, lower_max_err, lower_max_err_idx, _ = self.calculate_bspline_fitting_error(
+            self.bspline_processor.lower_curve,
+            lower_error_data,
+            return_max_error=True,
+        )
+        _ = upper_sum_sq, lower_sum_sq
+
+        self.bspline_processor.last_upper_max_error = upper_max_err
+        self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
+        self.bspline_processor.last_lower_max_error = lower_max_err
+        self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
+
+        upper_vertical = self.calculate_bspline_vertical_error(
+            self.bspline_processor.upper_curve,
+            upper_error_data,
+            exponent_guess=float(getattr(self.bspline_processor, "param_exponent_upper", 0.5)),
+        )
+        lower_vertical = self.calculate_bspline_vertical_error(
+            self.bspline_processor.lower_curve,
+            lower_error_data,
+            exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
+        )
+        return upper_vertical, lower_vertical
 
     def calculate_bspline_fitting_error(
                 self,
@@ -578,31 +590,7 @@ class BSplineController:
         self.window.status_log.append(message)
 
         if success and self.bspline_processor.upper_curve is not None and self.bspline_processor.lower_curve is not None:
-            upper_sum_sq, upper_max_err, upper_max_err_idx, _ = self.calculate_bspline_fitting_error(
-                self.bspline_processor.upper_curve,
-                self.processor.upper_data,
-                return_max_error=True,
-            )
-            lower_sum_sq, lower_max_err, lower_max_err_idx, _ = self.calculate_bspline_fitting_error(
-                self.bspline_processor.lower_curve,
-                self.processor.lower_data,
-                return_max_error=True,
-            )
-            _ = upper_sum_sq, lower_sum_sq
-            self.bspline_processor.last_upper_max_error = upper_max_err
-            self.bspline_processor.last_upper_max_error_idx = upper_max_err_idx
-            self.bspline_processor.last_lower_max_error = lower_max_err
-            self.bspline_processor.last_lower_max_error_idx = lower_max_err_idx
-            upper_vertical = self.calculate_bspline_vertical_error(
-                self.bspline_processor.upper_curve,
-                self.processor.upper_data,
-                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_upper", 0.5)),
-            )
-            lower_vertical = self.calculate_bspline_vertical_error(
-                self.bspline_processor.lower_curve,
-                self.processor.lower_data,
-                exponent_guess=float(getattr(self.bspline_processor, "param_exponent_lower", 0.5)),
-            )
+            upper_vertical, lower_vertical = self._update_final_error_metrics()
             self.window.status_log.append(
                 "Post-insert vertical max upper/lower (% chord) = "
                 f"{upper_vertical['max_error'] * 100.0:.4f}% / {lower_vertical['max_error'] * 100.0:.4f}%"
