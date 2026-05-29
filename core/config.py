@@ -12,25 +12,24 @@ import sys
 from pathlib import Path
 
 # Debugging & Logging
-DEBUG_WORKER_LOGGING: bool = False
+DEBUG_WORKER_LOGGING: bool = True
 
 # B-spline settings
 DEFAULT_BSPLINE_DEGREE: int = 4  # Degree of B-spline curves (3-7 recommended for airfoils)
 DEFAULT_BSPLINE_CP: int = 9   # Initial number of control points per surface (must be >= degree + 1)
-DEFAULT_SMOOTHNESS_PENALTY: float = 0.001  # Weight for control point smoothing penalty (higher = smoother, lower = more accurate)
+DEFAULT_SMOOTHNESS_PENALTY: float = 0.0  # Weight for control point smoothing penalty (higher = smoother, lower = more accurate)
 
 # ---- Manufacturing / Export defaults -------------------------------------
 DEFAULT_CHORD_LENGTH_MM: float = 200.0
 DEFAULT_TE_THICKNESS_MM: float = 0.0
-ENABLE_BSP_EXPORT: bool = False
-ENABLE_DAT_EXPORT: bool = False
+ENABLE_BSP_EXPORT: bool = True
+ENABLE_DAT_EXPORT: bool = True
 ENABLE_DXF_BEZIER_EXPORT: bool = False
 MIN_CP_NEIGHBOR_DISTANCE: float = 1.0e-3
 
 # ---- Sampling & Debugging -----------------------------------------------
 NUM_POINTS_CURVE_ERROR: int = 35000
-# Set to "msr" in airfoilfitter.config.json to use the legacy parametric objective.
-FIT_ERROR_OBJECTIVE: str = "vertical"
+FIT_ERROR_OBJECTIVE: str = "msr"
 KNOT_INSERTION_STRATEGY: str = "midspan"  # "adaptive" or "midspan"
 
 # Input repaneling samples normalized fit data from the temporary cubic spline
@@ -68,6 +67,13 @@ ENABLE_SOFT_TE_HANDLE_QUALITY: bool = True
 DEFAULT_TE_HANDLE_QUALITY_WEIGHT: float = 0.05
 TE_HANDLE_MIN_LENGTH: float = 0.040
 TE_HANDLE_SHORT_LENGTH_WEIGHT: float = 0.25
+
+# UI-applied TE thickening directly displaces existing B-spline control points.
+# The TE gap itself is exact; LE tangency and curvature are always preserved
+# when those derivative constraints are available for the fitted spline.
+TE_THICKENING_CURVATURE_SAMPLES: int = 500
+TE_THICKENING_OBJECTIVE_DISPLACEMENT_WEIGHT: float = 1.0e-5
+TE_THICKENING_OBJECTIVE_SMOOTHNESS_WEIGHT: float = 1.0e-4
 
 
 USER_CONFIG_FILENAME = "airfoilfitter.config.json"
